@@ -234,7 +234,25 @@ if menu == "Cuota Litis":
     st.title("Cuota Litis por Expediente")
     if not casos.empty:
         df_litis = casos.copy()
-        df_litis["Monto_Cuota_Litis"] = df_litis["Monto"] * df_litis["Cuota_Litis"]/100
-        st.dataframe(df_litis[["Cliente","Expediente","Cuota_Litis","Monto_Cuota_Litis","Contraparte","Observaciones"]])
+        # Calcula cuota litis sobre Monto Base
+        df_litis["Monto_Cuota_Litis"] = df_litis["Monot_Base"] * df_litis["Cuota_Litis"]/100
+        # Pagos a cuenta de cuota litis
+        def pagos_cuota_litis(id_caso):
+            if pagos.empty:
+                return 0.0
+            return pagos[pagos["ID_CASO"]==id_caso]["Monto"].sum()
+        df_litis["Pagado_Cuota"] = df_litis["ID_CASO"].apply(pagos_cuota_litis)
+        df_litis["Saldo_Cuota"] = df_litis["Monto_Cuota_Litis"] - df_litis["Pagado_Cuota"]
+        st.dataframe(df_litis[[
+            "Cliente",
+            "Expediente",
+            "Cuota_Litis",
+            "Monot_Base",
+            "Monto_Cuota_Litis",
+            "Pagado_Cuota",
+            "Saldo_Cuota",
+            "Contraparte",
+            "Observaciones"
+        ]])
     else:
         st.write("No hay casos registrados.")
