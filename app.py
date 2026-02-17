@@ -3,19 +3,13 @@ import pandas as pd
 import os
 from datetime import datetime
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase import pdfmetrics
-from reportlab.platypus import Table
 from reportlab.lib.units import inch
 
 st.set_page_config(page_title="Sistema Jurídico PRO", layout="wide")
 
-# =========================
-# LOGIN SIMPLE
-# =========================
+# ===================== LOGIN =====================
 
 PASSWORD = "estudio123"
 
@@ -33,9 +27,7 @@ if not st.session_state.login:
             st.error("Contraseña incorrecta")
     st.stop()
 
-# =========================
-# FUNCIONES CSV
-# =========================
+# ===================== FUNCIONES =====================
 
 def cargar_csv(nombre):
     if os.path.exists(nombre):
@@ -49,11 +41,11 @@ clientes = cargar_csv("clientes.csv")
 casos = cargar_csv("casos.csv")
 pagos = cargar_csv("pagos.csv")
 
-menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Contrato","Reporte Excel"])
+menu = st.sidebar.selectbox("Menú", [
+    "Dashboard","Clientes","Casos","Pagos","Contrato","Reporte Excel"
+])
 
-# =========================
-# CLIENTES
-# =========================
+# ===================== CLIENTES =====================
 
 if menu == "Clientes":
     st.title("Gestión de Clientes")
@@ -66,37 +58,33 @@ if menu == "Clientes":
 
     if st.button("Guardar Cliente"):
         nuevo = pd.DataFrame([{
-            "Nombre": nombre,
-            "DNI": dni,
-            "Celular": celular,
-            "Correo": correo,
-            "Dirección": direccion
+            "Nombre":nombre,
+            "DNI":dni,
+            "Celular":celular,
+            "Correo":correo,
+            "Dirección":direccion
         }])
-        clientes = pd.concat([clientes, nuevo], ignore_index=True)
+        clientes = pd.concat([clientes,nuevo],ignore_index=True)
         guardar_csv(clientes,"clientes.csv")
-        st.success("Cliente guardado")
         st.rerun()
 
-    st.subheader("Lista")
     if not clientes.empty:
         for i in clientes.index:
             col1,col2 = st.columns([4,1])
-            col1.write(f"{clientes.loc[i,'Nombre']} | DNI: {clientes.loc[i,'DNI']}")
+            col1.write(f"{clientes.loc[i,'Nombre']} | DNI:{clientes.loc[i,'DNI']}")
             if col2.button("Eliminar", key=f"cli{i}"):
                 clientes = clientes.drop(i).reset_index(drop=True)
                 guardar_csv(clientes,"clientes.csv")
                 st.rerun()
 
-# =========================
-# CASOS
-# =========================
+# ===================== CASOS =====================
 
 if menu == "Casos":
     st.title("Gestión de Casos")
 
     cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [])
     materia = st.text_input("Materia")
-    expediente = st.text_input("Expediente")
+    expediente = st.text_input("Número expediente")
     año = st.text_input("Año")
     monto = st.number_input("Monto pactado",0.0)
     porcentaje = st.number_input("Cuota litis (%)",0.0)
@@ -104,13 +92,15 @@ if menu == "Casos":
     abogado = st.text_input("Abogado a cargo")
 
     if st.button("Guardar Caso"):
+        id_caso = f"{expediente}-{año}"
         nuevo = pd.DataFrame([{
+            "ID_CASO":id_caso,
             "Cliente":cliente,
             "Materia":materia,
             "Expediente":expediente,
             "Año":año,
             "Monto":monto,
-            "Porcentaje":porcentaje,
+            "CuotaLitis%":porcentaje,
             "Etapa":etapa,
             "Abogado":abogado
         }])
@@ -120,30 +110,34 @@ if menu == "Casos":
 
     if not casos.empty:
         for i in casos.index:
-            exp = casos.loc[i,"Expediente"]
-            total_pagado = pagos[pagos["Expediente"]==exp]["Monto"].sum() if not pagos.empty else 0
+            id_caso = casos.loc[i,"ID_CASO"]
+            total_pagado = pagos[pagos["ID_CASO"]==id_caso]["Monto"].sum() if not pagos.empty else 0
             saldo = casos.loc[i,"Monto"] - total_pagado
-            col1,col2 = st.columns([5,1])
-            col1.write(f"{casos.loc[i,'Cliente']} | Exp:{exp} | Saldo:S/ {saldo}")
+
+            col1,col2 = st.columns([6,1])
+            col1.write(
+                f"{casos.loc[i,'Cliente']} | {id_caso} | "
+                f"Monto:S/ {casos.loc[i,'Monto']} | "
+                f"Pagado:S/ {total_pagado} | "
+                f"Saldo:S/ {saldo}"
+            )
             if col2.button("Eliminar", key=f"cas{i}"):
                 casos = casos.drop(i).reset_index(drop=True)
                 guardar_csv(casos,"casos.csv")
                 st.rerun()
 
-# =========================
-# PAGOS
-# =========================
+# ===================== PAGOS =====================
 
 if menu == "Pagos":
     st.title("Registro de Pagos")
 
-    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
+    caso = st.selectbox("Caso", casos["ID_CASO"] if not casos.empty else [])
     fecha = st.date_input("Fecha")
     monto_pago = st.number_input("Monto pagado",0.0)
 
     if st.button("Registrar Pago"):
         nuevo = pd.DataFrame([{
-            "Expediente":caso,
+            "ID_CASO":caso,
             "Fecha":fecha,
             "Monto":monto_pago
         }])
@@ -152,11 +146,19 @@ if menu == "Pagos":
         st.rerun()
 
     if not pagos.empty:
-        st.dataframe(pagos)
+        for i in pagos.index:
+            col1,col2 = st.columns([4,1])
+            col1.write(
+                f"{pagos.loc[i,'ID_CASO']} | "
+                f"{pagos.loc[i,'Fecha']} | "
+                f"S/ {pagos.loc[i,'Monto']}"
+            )
+            if col2.button("Eliminar", key=f"pag{i}"):
+                pagos = pagos.drop(i).reset_index(drop=True)
+                guardar_csv(pagos,"pagos.csv")
+                st.rerun()
 
-# =========================
-# DASHBOARD
-# =========================
+# ===================== DASHBOARD =====================
 
 if menu == "Dashboard":
     st.title("Dashboard Financiero")
@@ -168,61 +170,50 @@ if menu == "Dashboard":
     total_pendiente = 0
     if not casos.empty:
         for i in casos.index:
-            exp = casos.loc[i,"Expediente"]
-            total_pagado = pagos[pagos["Expediente"]==exp]["Monto"].sum() if not pagos.empty else 0
+            id_caso = casos.loc[i,"ID_CASO"]
+            total_pagado = pagos[pagos["ID_CASO"]==id_caso]["Monto"].sum() if not pagos.empty else 0
             total_pendiente += casos.loc[i,"Monto"] - total_pagado
 
     col1,col2,col3,col4 = st.columns(4)
     col1.metric("Clientes", total_clientes)
     col2.metric("Casos", total_casos)
-    col3.metric("Ingresos", f"S/ {total_ingresos}")
-    col4.metric("Pendiente", f"S/ {total_pendiente}")
+    col3.metric("Ingresos Totales", f"S/ {total_ingresos}")
+    col4.metric("Pendiente Total", f"S/ {total_pendiente}")
 
-# =========================
-# CONTRATO PDF
-# =========================
+# ===================== CONTRATO PDF =====================
 
 if menu == "Contrato":
     st.title("Generar Contrato PDF")
 
-    cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [])
-    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
+    caso = st.selectbox("Caso", casos["ID_CASO"] if not casos.empty else [])
 
     if st.button("Generar PDF"):
-        archivo = f"Contrato_{cliente}.pdf"
+        archivo = f"Contrato_{caso}.pdf"
         doc = SimpleDocTemplate(archivo,pagesize=A4)
         elementos = []
-
         estilos = getSampleStyleSheet()
-        estilo_normal = estilos["Normal"]
 
         texto = f"""
-        CONTRATO DE PRESTACIÓN DE SERVICIOS LEGALES
+CONTRATO DE PRESTACIÓN DE SERVICIOS LEGALES
 
-        Cliente: {cliente}
-        Expediente: {caso}
+Caso: {caso}
 
-        El presente contrato regula la prestación de servicios legales,
-        conforme a los honorarios pactados entre las partes.
+Se pactan honorarios conforme al acuerdo suscrito entre las partes.
+El cliente se obliga a cumplir con los pagos establecidos.
 
-        Fecha: {datetime.today().strftime("%d/%m/%Y")}
+Fecha: {datetime.today().strftime("%d/%m/%Y")}
         """
 
-        elementos.append(Paragraph(texto, estilo_normal))
+        elementos.append(Paragraph(texto, estilos["Normal"]))
         elementos.append(Spacer(1,0.5*inch))
-
         doc.build(elementos)
 
         with open(archivo,"rb") as f:
             st.download_button("Descargar Contrato PDF",f,archivo)
 
-# =========================
-# REPORTE EXCEL
-# =========================
+# ===================== REPORTE EXCEL =====================
 
 if menu == "Reporte Excel":
-    st.title("Exportar Reporte Financiero")
-
     archivo = "reporte_financiero.xlsx"
     with pd.ExcelWriter(archivo, engine="openpyxl") as writer:
         clientes.to_excel(writer, sheet_name="Clientes", index=False)
