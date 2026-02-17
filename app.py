@@ -198,3 +198,6 @@ if menu == "Contrato":
         st.download_button(
             "Descargar Contrato PDF",
             buffer.getvalue(),
+            file_name="Contrato.pdf",
+            mime="application/pdf"
+        )
