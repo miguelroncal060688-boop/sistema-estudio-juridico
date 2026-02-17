@@ -1,203 +1,233 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import date
-from io import BytesIO
+from datetime import datetime
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib import colors
-from reportlab.lib.units import inch
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase import pdfmetrics
+from reportlab.platypus import Table
+from reportlab.lib.units import inch
 
-# ---------------- CONFIG ----------------
-st.set_page_config(page_title="Estudio Jurídico Roncal Liñán y Asociados", layout="wide")
-st.title("Sistema de Gestión – Estudio Jurídico Roncal Liñán y Asociados")
+st.set_page_config(page_title="Sistema Jurídico PRO", layout="wide")
 
-DATA_DIR = "data"
-os.makedirs(DATA_DIR, exist_ok=True)
+# =========================
+# LOGIN SIMPLE
+# =========================
 
-def load_data(name, columns):
-    path = os.path.join(DATA_DIR, f"{name}.csv")
-    if os.path.exists(path):
-        return pd.read_csv(path)
-    else:
-        return pd.DataFrame(columns=columns)
+PASSWORD = "estudio123"
 
-def save_data(df, name):
-    path = os.path.join(DATA_DIR, f"{name}.csv")
-    df.to_csv(path, index=False)
+if "login" not in st.session_state:
+    st.session_state.login = False
 
-# ---------------- CARGA ----------------
-clientes_cols = ["ID","Nombre","DNI","Celular","Correo","Direccion","Contacto_Emergencia","Celular_Emergencia","Observaciones"]
-casos_cols = ["ID","Cliente_ID","Materia","Expediente","Año","Distrito","Juzgado","Pretension","Etapa","Abogado","Riesgo"]
-honorarios_cols = ["Caso_ID","Tipo","Monto_Pactado","Porcentaje_Cuota_Litis"]
-pagos_cols = ["Caso_ID","Fecha","Monto"]
+if not st.session_state.login:
+    st.title("Acceso al Sistema Jurídico")
+    pwd = st.text_input("Ingrese contraseña", type="password")
+    if st.button("Ingresar"):
+        if pwd == PASSWORD:
+            st.session_state.login = True
+            st.rerun()
+        else:
+            st.error("Contraseña incorrecta")
+    st.stop()
 
-clientes = load_data("clientes", clientes_cols)
-casos = load_data("casos", casos_cols)
-honorarios = load_data("honorarios", honorarios_cols)
-pagos = load_data("pagos", pagos_cols)
+# =========================
+# FUNCIONES CSV
+# =========================
 
-menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Honorarios","Pagos","Contrato"])
+def cargar_csv(nombre):
+    if os.path.exists(nombre):
+        return pd.read_csv(nombre)
+    return pd.DataFrame()
 
-# ---------------- DASHBOARD ----------------
+def guardar_csv(df, nombre):
+    df.to_csv(nombre, index=False)
+
+clientes = cargar_csv("clientes.csv")
+casos = cargar_csv("casos.csv")
+pagos = cargar_csv("pagos.csv")
+
+menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Contrato","Reporte Excel"])
+
+# =========================
+# CLIENTES
+# =========================
+
+if menu == "Clientes":
+    st.title("Gestión de Clientes")
+
+    nombre = st.text_input("Nombre completo")
+    dni = st.text_input("DNI")
+    celular = st.text_input("Celular")
+    correo = st.text_input("Correo")
+    direccion = st.text_input("Dirección")
+
+    if st.button("Guardar Cliente"):
+        nuevo = pd.DataFrame([{
+            "Nombre": nombre,
+            "DNI": dni,
+            "Celular": celular,
+            "Correo": correo,
+            "Dirección": direccion
+        }])
+        clientes = pd.concat([clientes, nuevo], ignore_index=True)
+        guardar_csv(clientes,"clientes.csv")
+        st.success("Cliente guardado")
+        st.rerun()
+
+    st.subheader("Lista")
+    if not clientes.empty:
+        for i in clientes.index:
+            col1,col2 = st.columns([4,1])
+            col1.write(f"{clientes.loc[i,'Nombre']} | DNI: {clientes.loc[i,'DNI']}")
+            if col2.button("Eliminar", key=f"cli{i}"):
+                clientes = clientes.drop(i).reset_index(drop=True)
+                guardar_csv(clientes,"clientes.csv")
+                st.rerun()
+
+# =========================
+# CASOS
+# =========================
+
+if menu == "Casos":
+    st.title("Gestión de Casos")
+
+    cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [])
+    materia = st.text_input("Materia")
+    expediente = st.text_input("Expediente")
+    año = st.text_input("Año")
+    monto = st.number_input("Monto pactado",0.0)
+    porcentaje = st.number_input("Cuota litis (%)",0.0)
+    etapa = st.text_input("Etapa procesal")
+    abogado = st.text_input("Abogado a cargo")
+
+    if st.button("Guardar Caso"):
+        nuevo = pd.DataFrame([{
+            "Cliente":cliente,
+            "Materia":materia,
+            "Expediente":expediente,
+            "Año":año,
+            "Monto":monto,
+            "Porcentaje":porcentaje,
+            "Etapa":etapa,
+            "Abogado":abogado
+        }])
+        casos = pd.concat([casos,nuevo],ignore_index=True)
+        guardar_csv(casos,"casos.csv")
+        st.rerun()
+
+    if not casos.empty:
+        for i in casos.index:
+            exp = casos.loc[i,"Expediente"]
+            total_pagado = pagos[pagos["Expediente"]==exp]["Monto"].sum() if not pagos.empty else 0
+            saldo = casos.loc[i,"Monto"] - total_pagado
+            col1,col2 = st.columns([5,1])
+            col1.write(f"{casos.loc[i,'Cliente']} | Exp:{exp} | Saldo:S/ {saldo}")
+            if col2.button("Eliminar", key=f"cas{i}"):
+                casos = casos.drop(i).reset_index(drop=True)
+                guardar_csv(casos,"casos.csv")
+                st.rerun()
+
+# =========================
+# PAGOS
+# =========================
+
+if menu == "Pagos":
+    st.title("Registro de Pagos")
+
+    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
+    fecha = st.date_input("Fecha")
+    monto_pago = st.number_input("Monto pagado",0.0)
+
+    if st.button("Registrar Pago"):
+        nuevo = pd.DataFrame([{
+            "Expediente":caso,
+            "Fecha":fecha,
+            "Monto":monto_pago
+        }])
+        pagos = pd.concat([pagos,nuevo],ignore_index=True)
+        guardar_csv(pagos,"pagos.csv")
+        st.rerun()
+
+    if not pagos.empty:
+        st.dataframe(pagos)
+
+# =========================
+# DASHBOARD
+# =========================
+
 if menu == "Dashboard":
-    st.subheader("Resumen General")
+    st.title("Dashboard Financiero")
 
     total_clientes = len(clientes)
     total_casos = len(casos)
-    total_pagado = pagos["Monto"].sum() if not pagos.empty else 0
-    total_pactado = honorarios["Monto_Pactado"].sum() if not honorarios.empty else 0
-    saldo = total_pactado - total_pagado
+    total_ingresos = pagos["Monto"].sum() if not pagos.empty else 0
 
-    col1, col2, col3, col4 = st.columns(4)
+    total_pendiente = 0
+    if not casos.empty:
+        for i in casos.index:
+            exp = casos.loc[i,"Expediente"]
+            total_pagado = pagos[pagos["Expediente"]==exp]["Monto"].sum() if not pagos.empty else 0
+            total_pendiente += casos.loc[i,"Monto"] - total_pagado
+
+    col1,col2,col3,col4 = st.columns(4)
     col1.metric("Clientes", total_clientes)
     col2.metric("Casos", total_casos)
-    col3.metric("Ingresos", f"S/ {total_pagado:,.2f}")
-    col4.metric("Saldo pendiente", f"S/ {saldo:,.2f}")
+    col3.metric("Ingresos", f"S/ {total_ingresos}")
+    col4.metric("Pendiente", f"S/ {total_pendiente}")
 
-# ---------------- CLIENTES ----------------
-if menu == "Clientes":
-    st.subheader("Registrar Cliente")
+# =========================
+# CONTRATO PDF
+# =========================
 
-    with st.form("form_cliente"):
-        nombre = st.text_input("Nombre completo")
-        dni = st.text_input("DNI")
-        celular = st.text_input("Celular")
-        correo = st.text_input("Correo")
-        direccion = st.text_input("Dirección")
-        contacto = st.text_input("Contacto de emergencia")
-        cel_em = st.text_input("Celular emergencia")
-        obs = st.text_area("Observaciones")
-        submit = st.form_submit_button("Guardar")
-
-    if submit:
-        nuevo = pd.DataFrame([[len(clientes)+1,nombre,dni,celular,correo,direccion,contacto,cel_em,obs]],
-                             columns=clientes_cols)
-        clientes = pd.concat([clientes,nuevo],ignore_index=True)
-        save_data(clientes,"clientes")
-        st.success("Cliente guardado")
-
-    st.dataframe(clientes)
-
-# ---------------- CASOS ----------------
-if menu == "Casos":
-    st.subheader("Registrar Caso")
-
-    if clientes.empty:
-        st.warning("Primero registra un cliente")
-    else:
-        with st.form("form_caso"):
-            cliente = st.selectbox("Cliente", clientes["Nombre"])
-            materia = st.text_input("Materia")
-            expediente = st.text_input("Número de expediente")
-            año = st.text_input("Año")
-            distrito = st.text_input("Distrito Judicial")
-            juzgado = st.text_input("Juzgado")
-            pretension = st.text_area("Pretensión")
-            etapa = st.selectbox("Etapa procesal", ["Postulatoria","Probatoria","Decisión","Apelación","Casación","Ejecución"])
-            abogado = st.text_input("Abogado a cargo", value="Miguel Roncal Liñán")
-            riesgo = st.selectbox("Riesgo", ["Bajo","Medio","Alto"])
-            submit = st.form_submit_button("Guardar")
-
-        if submit:
-            cliente_id = clientes[clientes["Nombre"]==cliente]["ID"].values[0]
-            nuevo = pd.DataFrame([[len(casos)+1,cliente_id,materia,expediente,año,distrito,juzgado,pretension,etapa,abogado,riesgo]],
-                                 columns=casos_cols)
-            casos = pd.concat([casos,nuevo],ignore_index=True)
-            save_data(casos,"casos")
-            st.success("Caso guardado")
-
-    st.dataframe(casos)
-
-# ---------------- HONORARIOS ----------------
-if menu == "Honorarios":
-    st.subheader("Registrar Honorarios")
-
-    if casos.empty:
-        st.warning("Primero registra un caso")
-    else:
-        with st.form("form_honorarios"):
-            caso = st.selectbox("Caso", casos["ID"])
-            tipo = st.selectbox("Tipo", ["Fijo","Cuota Litis","Mixto"])
-            monto = st.number_input("Monto pactado", min_value=0.0)
-            porcentaje = st.number_input("Porcentaje cuota litis", min_value=0.0)
-            submit = st.form_submit_button("Guardar")
-
-        if submit:
-            nuevo = pd.DataFrame([[caso,tipo,monto,porcentaje]],
-                                 columns=honorarios_cols)
-            honorarios = pd.concat([honorarios,nuevo],ignore_index=True)
-            save_data(honorarios,"honorarios")
-            st.success("Honorarios guardados")
-
-    st.dataframe(honorarios)
-
-# ---------------- PAGOS ----------------
-if menu == "Pagos":
-    st.subheader("Registrar Pago")
-
-    if casos.empty:
-        st.warning("Primero registra un caso")
-    else:
-        with st.form("form_pago"):
-            caso = st.selectbox("Caso", casos["ID"])
-            fecha = st.date_input("Fecha", date.today())
-            monto = st.number_input("Monto", min_value=0.0)
-            submit = st.form_submit_button("Guardar")
-
-        if submit:
-            nuevo = pd.DataFrame([[caso,fecha,monto]],
-                                 columns=pagos_cols)
-            pagos = pd.concat([pagos,nuevo],ignore_index=True)
-            save_data(pagos,"pagos")
-            st.success("Pago registrado")
-
-    st.dataframe(pagos)
-
-# ---------------- CONTRATO PDF ----------------
 if menu == "Contrato":
-    st.subheader("Generar Contrato en PDF")
+    st.title("Generar Contrato PDF")
 
-    if casos.empty:
-        st.warning("No hay casos registrados")
-    else:
-        caso_id = st.selectbox("Seleccionar Caso", casos["ID"])
-        caso = casos[casos["ID"]==caso_id].iloc[0]
-        cliente = clientes[clientes["ID"]==caso["Cliente_ID"]].iloc[0]
+    cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [])
+    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
 
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
-        elements = []
-        styles = getSampleStyleSheet()
-        style = styles["Normal"]
+    if st.button("Generar PDF"):
+        archivo = f"Contrato_{cliente}.pdf"
+        doc = SimpleDocTemplate(archivo,pagesize=A4)
+        elementos = []
+
+        estilos = getSampleStyleSheet()
+        estilo_normal = estilos["Normal"]
 
         texto = f"""
         CONTRATO DE PRESTACIÓN DE SERVICIOS LEGALES
 
-        Cliente: {cliente['Nombre']} - DNI: {cliente['DNI']}
-        Expediente: {caso['Expediente']} - Año {caso['Año']}
+        Cliente: {cliente}
+        Expediente: {caso}
 
-        PRIMERA: Objeto del contrato.
-        Defensa legal en proceso sobre {caso['Materia']}.
+        El presente contrato regula la prestación de servicios legales,
+        conforme a los honorarios pactados entre las partes.
 
-        SEGUNDA: Honorarios conforme acuerdo pactado.
-
-        TERCERA: Gastos judiciales asumidos por el cliente.
-
-        CUARTA: Penalidad por mora según interés legal.
-
-        QUINTA: Protección de datos personales conforme normativa vigente.
-
-        Firmado en señal de conformidad.
+        Fecha: {datetime.today().strftime("%d/%m/%Y")}
         """
 
-        elements.append(Paragraph(texto.replace("\n","<br/>"), style))
-        doc.build(elements)
+        elementos.append(Paragraph(texto, estilo_normal))
+        elementos.append(Spacer(1,0.5*inch))
 
-        st.download_button(
-            "Descargar Contrato PDF",
-            buffer.getvalue(),
-            file_name="Contrato.pdf",
-            mime="application/pdf"
-        )
+        doc.build(elementos)
+
+        with open(archivo,"rb") as f:
+            st.download_button("Descargar Contrato PDF",f,archivo)
+
+# =========================
+# REPORTE EXCEL
+# =========================
+
+if menu == "Reporte Excel":
+    st.title("Exportar Reporte Financiero")
+
+    archivo = "reporte_financiero.xlsx"
+    with pd.ExcelWriter(archivo, engine="openpyxl") as writer:
+        clientes.to_excel(writer, sheet_name="Clientes", index=False)
+        casos.to_excel(writer, sheet_name="Casos", index=False)
+        pagos.to_excel(writer, sheet_name="Pagos", index=False)
+
+    with open(archivo,"rb") as f:
+        st.download_button("Descargar Reporte Excel",f,archivo)
