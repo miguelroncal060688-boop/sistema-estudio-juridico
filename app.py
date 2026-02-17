@@ -36,7 +36,7 @@ casos = cargar_csv("casos.csv")
 pagos = cargar_csv("pagos.csv")
 
 # ===== MENÚ =====
-menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Cuota Litis","Reporte de Observaciones"])
+menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Cuota Litis"])
 
 # ===== CLIENTES =====
 if menu == "Clientes":
@@ -77,7 +77,7 @@ if menu == "Clientes":
                 celular_e = st.text_input("Celular", clientes.loc[idx,"Celular"])
                 correo_e = st.text_input("Correo", clientes.loc[idx,"Correo"])
                 direccion_e = st.text_input("Dirección", clientes.loc[idx,"Dirección"])
-                observaciones_e = st.text_area("Observaciones", clientes.loc[idx,"Observaciones"] if "Observaciones" in clientes.columns else "")
+                observaciones_e = st.text_area("Observaciones", clientes.loc[idx,"Observaciones"])
                 submit_edit = st.form_submit_button("Guardar Cambios", key=f"submit_edit_cliente_{idx}")
                 if submit_edit:
                     clientes.loc[idx] = [nombre_e,dni_e,celular_e,correo_e,direccion_e,observaciones_e]
@@ -222,32 +222,16 @@ if menu == "Dashboard":
 
     st.subheader("Seguimiento de Pagos por Caso")
     if not df_saldo.empty:
-        st.dataframe(df_saldo[["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo"]])
+        st.dataframe(df_saldo[["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo","Observaciones"]])
     else:
         st.write("No hay casos registrados.")
 
-# ===== PESTAÑA CUOTA LITIS =====
+# ===== PESTAÑA CUOTA LITIS SIMPLE =====
 if menu == "Cuota Litis":
-    st.title("Cuota Litis y Pagos a Cuenta")
+    st.title("Cuota Litis por Caso")
     if not casos.empty:
         df_litis = casos.copy()
-        # Calcular cuota litis esperada y pagos a cuenta
-        df_litis["Cuota_Litis_Monto"] = df_litis["Monto"] * df_litis["Cuota_Litis"]/100
-        df_litis["Pagos_a_Cuenta"] = df_litis["ID_CASO"].apply(
-            lambda x: pagos[pagos["ID_CASO"]==x]["Monto"].sum() if not pagos.empty else 0
-        )
-        df_litis["Saldo_Cuota_Litis"] = df_litis["Cuota_Litis_Monto"] - df_litis["Pagos_a_Cuenta"]
-
-        st.dataframe(df_litis[["ID_CASO","Cliente","Monto","Cuota_Litis","Cuota_Litis_Monto","Pagos_a_Cuenta","Saldo_Cuota_Litis","Observaciones"]])
-    else:
-        st.write("No hay casos registrados.")
-
-# ===== PESTAÑA REPORTE DE OBSERVACIONES =====
-if menu == "Reporte de Observaciones":
-    st.title("Reporte de Observaciones por Expediente y Cliente")
-    if not casos.empty:
-        sel_expediente = st.selectbox("Selecciona Expediente", casos["Expediente"].unique(), key="sel_expediente")
-        df_obs = casos[casos["Expediente"]==sel_expediente][["Cliente","Expediente","Observaciones"]]
-        st.dataframe(df_obs)
+        df_litis["Monto_Cuota_Litis"] = df_litis["Monto"] * df_litis["Cuota_Litis"]/100
+        st.dataframe(df_litis[["Cliente","Expediente","Cuota_Litis","Monto_Cuota_Litis","Observaciones"]])
     else:
         st.write("No hay casos registrados.")
