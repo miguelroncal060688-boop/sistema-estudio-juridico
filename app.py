@@ -73,21 +73,32 @@ def export_df_to_excel(df, filename="export.xlsx"):
     st.download_button(label="Descargar Excel", data=output.getvalue(), file_name=filename)
 
 # ===============================
-# LOGIN
+# LOGIN ROBUSTO
 # ===============================
+# Asegurarse de que exista al menos un usuario admin
+cursor.execute("SELECT COUNT(*) FROM usuarios")
+if cursor.fetchone()[0]==0:
+    # Crear usuario admin por defecto
+    cursor.execute("INSERT INTO usuarios (usuario,contrasena,rol) VALUES (?,?,?)",("admin","admin123","admin"))
+    conn.commit()
+    st.warning("Se ha creado un usuario ADMIN por defecto: usuario='admin', contraseña='admin123'")
+
 if st.session_state.usuario is None:
     st.sidebar.title("Login")
     usuario_input = st.sidebar.text_input("Usuario")
     contrasena_input = st.sidebar.text_input("Contraseña", type="password")
     if st.sidebar.button("Ingresar"):
-        cursor.execute("SELECT * FROM usuarios WHERE usuario=? AND contrasena=?", (usuario_input, contrasena_input))
-        user = cursor.fetchone()
-        if user:
-            st.session_state.usuario = user[1]
-            st.session_state.rol = user[3]
-            st.experimental_rerun()
-        else:
-            st.sidebar.error("Usuario o contraseña incorrecto")
+        try:
+            query = "SELECT * FROM usuarios WHERE usuario=? AND contrasena=?"
+            user = pd.read_sql_query(query, conn, params=(usuario_input, contrasena_input))
+            if not user.empty:
+                st.session_state.usuario = user.loc[0,"usuario"]
+                st.session_state.rol = user.loc[0,"rol"]
+                st.experimental_rerun()
+            else:
+                st.sidebar.error("Usuario o contraseña incorrectos")
+        except Exception as e:
+            st.sidebar.error(f"Error al consultar la base de datos: {e}")
 else:
     st.sidebar.write(f"Usuario: {st.session_state.usuario} ({st.session_state.rol})")
     if st.sidebar.button("Cerrar sesión"):
