@@ -33,9 +33,14 @@ def guardar_csv(df, nombre):
 clientes = cargar_csv("clientes.csv")
 casos = cargar_csv("casos.csv")
 pagos = cargar_csv("pagos.csv")
-pagos_litis = cargar_csv("pagos_litis.csv")
+pagos_litis = cargar_csv("pagos_litis.csv")  # Nueva tabla
 
-menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Cuota Litis","Resumen Financiero"])
+# Agregar columna Observaciones si no existe
+for df, col in [(clientes, "Observaciones"), (casos, "Observaciones"), (pagos, "Observaciones"), (pagos_litis,"Observaciones")]:
+    if col not in df.columns:
+        df[col] = ""
+
+menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Cuota Litis","Pagos Cuota Litis"])
 
 # ===== CLIENTES =====
 if menu == "Clientes":
@@ -76,7 +81,7 @@ if menu == "Clientes":
                 celular_e = st.text_input("Celular", clientes.loc[idx,"Celular"])
                 correo_e = st.text_input("Correo", clientes.loc[idx,"Correo"])
                 direccion_e = st.text_input("Dirección", clientes.loc[idx,"Dirección"])
-                observaciones_e = st.text_area("Observaciones", clientes.loc[idx,"Observaciones"] if "Observaciones" in clientes.columns else "")
+                observaciones_e = st.text_area("Observaciones", clientes.loc[idx,"Observaciones"])
                 submit_edit = st.form_submit_button("Guardar Cambios", key=f"submit_edit_cliente_{idx}")
                 if submit_edit:
                     clientes.loc[idx] = [nombre_e,dni_e,celular_e,correo_e,direccion_e,observaciones_e]
@@ -140,7 +145,7 @@ if menu == "Casos":
                 cuota_litis_e = st.number_input("Cuota Litis (%)", casos.loc[idx,"Cuota_Litis"])
                 monot_base_e = st.number_input("Monto Base", casos.loc[idx,"Monot_Base"])
                 contraparte_e = st.text_input("Contraparte", casos.loc[idx,"Contraparte"])
-                observaciones_e = st.text_area("Observaciones", casos.loc[idx,"Observaciones"] if "Observaciones" in casos.columns else "")
+                observaciones_e = st.text_area("Observaciones", casos.loc[idx,"Observaciones"])
                 submit_edit = st.form_submit_button("Guardar Cambios", key=f"submit_edit_caso_{idx}")
                 if submit_edit:
                     casos.loc[idx] = [f"{expediente_e}-{año_e}-{cliente_e}", cliente_e, expediente_e, año_e, materia_e, monto_e, cuota_litis_e, monot_base_e, contraparte_e, observaciones_e]
@@ -191,16 +196,76 @@ if menu == "Pagos":
             st.success("Pago eliminado")
             st.experimental_rerun()
 
-# ===== CUOTA LITIS =====
-if menu == "Cuota Litis":
-    st.title("Registro de Pagos Cuota Litis")
+# ===== DASHBOARD =====
+if menu == "Dashboard":
+    st.title("Dashboard Financiero")
+    
+    total_clientes = len(clientes)
+    total_casos = len(casos)
+    total_ingresos = pagos["Monto"].sum() if not pagos.empty else 0
 
     if not casos.empty:
+        df_saldo = casos.copy()
+        for col in ["Contraparte","Monto","Observaciones"]:
+            if col not in df_saldo.columns:
+                df_saldo[col] = "" if col=="Contraparte" or col=="Observaciones" else 0.0
+        df_saldo["Pagado"] = df_saldo["ID_CASO"].apply(
+            lambda x: pagos[pagos["ID_CASO"]==x]["Monto"].sum() if not pagos.empty else 0
+        )
+        df_saldo["Saldo"] = df_saldo["Monto"] - df_saldo["Pagado"]
+        total_pendiente = df_saldo["Saldo"].sum()
+    else:
+        df_saldo = pd.DataFrame(columns=["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo","Observaciones"])
+        total_pendiente = 0
+
+    col1,col2,col3,col4 = st.columns(4)
+    col1.metric("Clientes", total_clientes)
+    col2.metric("Casos", total_casos)
+    col3.metric("Ingresos", f"S/ {total_ingresos:.2f}")
+    col4.metric("Pendiente", f"S/ {total_pendiente:.2f}")
+
+    st.subheader("Seguimiento de Pagos por Caso")
+    if not df_saldo.empty:
+        st.dataframe(df_saldo[["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo","Observaciones"]])
+    else:
+        st.write("No hay casos registrados.")
+
+# ===== PESTAÑA CUOTA LITIS =====
+if menu == "Cuota Litis":
+    st.title("Cuota Litis por Expediente")
+    if not casos.empty:
+        df_litis = casos.copy()
+        df_litis["Monto_Cuota_Litis"] = df_litis["Monot_Base"] * df_litis["Cuota_Litis"]/100
+        # Pagos a cuenta de cuota litis
+        def pagos_cuota_litis(id_caso):
+            if pagos_litis.empty:
+                return 0.0
+            return pagos_litis[pagos_litis["ID_CASO"]==id_caso]["Monto"].sum()
+        df_litis["Pagado_Cuota"] = df_litis["ID_CASO"].apply(pagos_cuota_litis)
+        df_litis["Saldo_Cuota"] = df_litis["Monto_Cuota_Litis"] - df_litis["Pagado_Cuota"]
+        st.dataframe(df_litis[[
+            "Cliente",
+            "Expediente",
+            "Cuota_Litis",
+            "Monot_Base",
+            "Monto_Cuota_Litis",
+            "Pagado_Cuota",
+            "Saldo_Cuota",
+            "Contraparte",
+            "Observaciones"
+        ]])
+    else:
+        st.write("No hay casos registrados.")
+
+# ===== PESTAÑA PAGOS CUOTA LITIS =====
+if menu == "Pagos Cuota Litis":
+    st.title("Registro de Pagos de Cuota Litis")
+    if not casos.empty:
         with st.form("form_pago_litis"):
-            caso_sel = st.selectbox("Caso", casos["ID_CASO"], key="caso_pago_litis")
-            cliente_sel = st.selectbox("Cliente", clientes["Nombre"], key="cliente_pago_litis")
+            caso_sel = st.selectbox("Caso", casos["ID_CASO"], key="caso_litis")
+            cliente_sel = st.selectbox("Cliente", clientes["Nombre"], key="cliente_litis")
             fecha = st.date_input("Fecha")
-            monto_pago = st.number_input("Monto pagado cuota litis",0.0)
+            monto_pago = st.number_input("Monto pagado",0.0)
             observaciones = st.text_area("Observaciones")
             submitted = st.form_submit_button("Registrar Pago Cuota Litis", key="guardar_pago_litis")
             if submitted:
@@ -213,110 +278,17 @@ if menu == "Cuota Litis":
                 }])
                 pagos_litis = pd.concat([pagos_litis,nuevo],ignore_index=True)
                 guardar_csv(pagos_litis,"pagos_litis.csv")
-                st.success("Pago cuota litis registrado")
+                st.success("Pago a Cuota Litis registrado")
                 st.experimental_rerun()
 
-    st.subheader("Pagos Cuota Litis registrados")
-    if not pagos_litis.empty:
-        sel_pago = st.selectbox("Selecciona Pago para eliminar", pagos_litis.index, key="sel_pago_litis")
-        p = pagos_litis.loc[sel_pago]
-        st.write(p)
-        if st.button("Eliminar Pago", key=f"del_pago_litis_{sel_pago}"):
-            pagos_litis.drop(sel_pago,inplace=True)
-            pagos_litis.reset_index(drop=True,inplace=True)
-            guardar_csv(pagos_litis,"pagos_litis.csv")
-            st.success("Pago eliminado")
-            st.experimental_rerun()
-
-# ===== DASHBOARD =====
-if menu == "Dashboard":
-    st.title("Dashboard Financiero")
-    
-    total_clientes = len(clientes)
-    total_casos = len(casos)
-    total_ingresos = pagos["Monto"].sum() if not pagos.empty else 0
-
-    if not casos.empty:
-        df_saldo = casos.copy()
-        for col in ["Contraparte","Monto"]:
-            if col not in df_saldo.columns:
-                df_saldo[col] = "" if col=="Contraparte" else 0.0
-        df_saldo["Pagado"] = df_saldo["ID_CASO"].apply(
-            lambda x: pagos[pagos["ID_CASO"]==x]["Monto"].sum() if not pagos.empty else 0
-        )
-        df_saldo["Saldo"] = df_saldo["Monto"] - df_saldo["Pagado"]
-        total_pendiente = df_saldo["Saldo"].sum()
-    else:
-        df_saldo = pd.DataFrame(columns=["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo"])
-        total_pendiente = 0
-
-    col1,col2,col3,col4 = st.columns(4)
-    col1.metric("Clientes", total_clientes)
-    col2.metric("Casos", total_casos)
-    col3.metric("Ingresos", f"S/ {total_ingresos:.2f}")
-    col4.metric("Pendiente", f"S/ {total_pendiente:.2f}")
-
-    st.subheader("Seguimiento de Pagos por Caso")
-    if not df_saldo.empty:
-        st.dataframe(df_saldo[["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo"]])
-    else:
-        st.write("No hay casos registrados.")
-
-# ===== RESUMEN FINANCIERO =====
-if menu == "Resumen Financiero":
-    st.title("Resumen Financiero General")
-
-    if not casos.empty:
-        resumen = casos.copy()
-        resumen["Monto_Cuota_Litis"] = resumen["Monot_Base"] * resumen["Cuota_Litis"]/100
-
-        # Honorarios pagados
-        def pagos_honorarios(id_caso):
-            if pagos.empty:
-                return 0.0
-            return pagos[pagos["ID_CASO"]==id_caso]["Monto"].sum()
-        resumen["Pagado_Honorarios"] = resumen["ID_CASO"].apply(pagos_honorarios)
-        resumen["Saldo_Honorarios"] = resumen["Monto"] - resumen["Pagado_Honorarios"]
-
-        # Pagos cuota litis
-        def pagos_cuota_litis(id_caso):
-            if pagos_litis.empty:
-                return 0.0
-            return pagos_litis[pagos_litis["ID_CASO"]==id_caso]["Monto"].sum()
-        resumen["Pagado_Cuota"] = resumen["ID_CASO"].apply(pagos_cuota_litis)
-        resumen["Saldo_Cuota"] = resumen["Monto_Cuota_Litis"] - resumen["Pagado_Cuota"]
-
-        # Totales combinados
-        resumen["Total_Pactado_Cuota"] = resumen["Monto"] + resumen["Monto_Cuota_Litis"]
-        resumen["Total_Pagado"] = resumen["Pagado_Honorarios"] + resumen["Pagado_Cuota"]
-        resumen["Total_Saldo"] = resumen["Total_Pactado_Cuota"] - resumen["Total_Pagado"]
-
-        st.subheader("Resumen por Caso")
-        st.dataframe(resumen[[
-            "Cliente",
-            "Expediente",
-            "Monto",
-            "Pagado_Honorarios",
-            "Saldo_Honorarios",
-            "Monot_Base",
-            "Cuota_Litis",
-            "Monto_Cuota_Litis",
-            "Pagado_Cuota",
-            "Saldo_Cuota",
-            "Total_Pactado_Cuota",
-            "Total_Pagado",
-            "Total_Saldo",
-            "Contraparte",
-            "Observaciones"
-        ]])
-
-        totales = pd.DataFrame({
-            "Concepto": ["Honorarios","Cuota Litis","Total General"],
-            "Pactado": [resumen["Monto"].sum(), resumen["Monto_Cuota_Litis"].sum(), resumen["Total_Pactado_Cuota"].sum()],
-            "Pagado": [resumen["Pagado_Honorarios"].sum(), resumen["Pagado_Cuota"].sum(), resumen["Total_Pagado"].sum()],
-            "Saldo": [resumen["Saldo_Honorarios"].sum(), resumen["Saldo_Cuota"].sum(), resumen["Total_Saldo"].sum()]
-        })
-        st.subheader("Totales Generales")
-        st.dataframe(totales)
-    else:
-        st.write("No hay casos registrados para mostrar resumen.")
+        st.subheader("Pagos Cuota Litis registrados")
+        if not pagos_litis.empty:
+            sel_pago_litis = st.selectbox("Selecciona Pago para eliminar", pagos_litis.index, key="sel_pago_litis")
+            p = pagos_litis.loc[sel_pago_litis]
+            st.write(p)
+            if st.button("Eliminar Pago Cuota Litis", key=f"del_pago_litis_{sel_pago_litis}"):
+                pagos_litis.drop(sel_pago_litis,inplace=True)
+                pagos_litis.reset_index(drop=True,inplace=True)
+                guardar_csv(pagos_litis,"pagos_litis.csv")
+                st.success("Pago eliminado")
+                st.experimental_rerun()
