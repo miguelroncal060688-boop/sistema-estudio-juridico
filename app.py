@@ -30,13 +30,11 @@ def cargar_csv(nombre):
 def guardar_csv(df, nombre):
     df.to_csv(nombre, index=False)
 
-# ===== DATOS =====
 clientes = cargar_csv("clientes.csv")
 casos = cargar_csv("casos.csv")
 pagos = cargar_csv("pagos.csv")
 
-# ===== MENÚ =====
-menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Cuota Litis"])
+menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos"])
 
 # ===== CLIENTES =====
 if menu == "Clientes":
@@ -48,7 +46,6 @@ if menu == "Clientes":
         celular = st.text_input("Celular")
         correo = st.text_input("Correo")
         direccion = st.text_input("Dirección")
-        observaciones = st.text_area("Observaciones")  # Nuevo campo
         submitted = st.form_submit_button("Guardar Cliente", key="guardar_cliente")
         if submitted:
             nuevo = pd.DataFrame([{
@@ -56,8 +53,7 @@ if menu == "Clientes":
                 "DNI": dni,
                 "Celular": celular,
                 "Correo": correo,
-                "Dirección": direccion,
-                "Observaciones": observaciones
+                "Dirección": direccion
             }])
             clientes = pd.concat([clientes, nuevo], ignore_index=True)
             guardar_csv(clientes,"clientes.csv")
@@ -77,10 +73,9 @@ if menu == "Clientes":
                 celular_e = st.text_input("Celular", clientes.loc[idx,"Celular"])
                 correo_e = st.text_input("Correo", clientes.loc[idx,"Correo"])
                 direccion_e = st.text_input("Dirección", clientes.loc[idx,"Dirección"])
-                observaciones_e = st.text_area("Observaciones", clientes.loc[idx,"Observaciones"])
                 submit_edit = st.form_submit_button("Guardar Cambios", key=f"submit_edit_cliente_{idx}")
                 if submit_edit:
-                    clientes.loc[idx] = [nombre_e,dni_e,celular_e,correo_e,direccion_e,observaciones_e]
+                    clientes.loc[idx] = [nombre_e,dni_e,celular_e,correo_e,direccion_e]
                     guardar_csv(clientes,"clientes.csv")
                     st.success("Cliente actualizado")
                     st.experimental_rerun()
@@ -104,7 +99,6 @@ if menu == "Casos":
         cuota_litis = st.number_input("Cuota Litis (%)",0.0)
         monot_base = st.number_input("Monto Base",0.0)
         contraparte = st.text_input("Contraparte")
-        observaciones = st.text_area("Observaciones")  # Nuevo campo
         submitted = st.form_submit_button("Guardar Caso", key="guardar_caso")
         if submitted:
             identificador = f"{expediente}-{año}-{cliente}"
@@ -117,8 +111,7 @@ if menu == "Casos":
                 "Monto": monto,
                 "Cuota_Litis": cuota_litis,
                 "Monot_Base": monot_base,
-                "Contraparte": contraparte,
-                "Observaciones": observaciones
+                "Contraparte": contraparte
             }])
             casos = pd.concat([casos,nuevo],ignore_index=True)
             guardar_csv(casos,"casos.csv")
@@ -141,10 +134,9 @@ if menu == "Casos":
                 cuota_litis_e = st.number_input("Cuota Litis (%)", casos.loc[idx,"Cuota_Litis"])
                 monot_base_e = st.number_input("Monto Base", casos.loc[idx,"Monot_Base"])
                 contraparte_e = st.text_input("Contraparte", casos.loc[idx,"Contraparte"])
-                observaciones_e = st.text_area("Observaciones", casos.loc[idx,"Observaciones"])
                 submit_edit = st.form_submit_button("Guardar Cambios", key=f"submit_edit_caso_{idx}")
                 if submit_edit:
-                    casos.loc[idx] = [f"{expediente_e}-{año_e}-{cliente_e}", cliente_e, expediente_e, año_e, materia_e, monto_e, cuota_litis_e, monot_base_e, contraparte_e, observaciones_e]
+                    casos.loc[idx] = [f"{expediente_e}-{año_e}-{cliente_e}", cliente_e, expediente_e, año_e, materia_e, monto_e, cuota_litis_e, monot_base_e, contraparte_e]
                     guardar_csv(casos,"casos.csv")
                     st.success("Caso actualizado")
                     st.experimental_rerun()
@@ -165,15 +157,13 @@ if menu == "Pagos":
             cliente_sel = st.selectbox("Cliente", clientes["Nombre"], key="cliente_pago")
             fecha = st.date_input("Fecha")
             monto_pago = st.number_input("Monto pagado",0.0)
-            observaciones = st.text_area("Observaciones")  # Nuevo campo
             submitted = st.form_submit_button("Registrar Pago", key="guardar_pago")
             if submitted:
                 nuevo = pd.DataFrame([{
                     "ID_CASO": caso_sel,
                     "Cliente": cliente_sel,
                     "Fecha": fecha,
-                    "Monto": monto_pago,
-                    "Observaciones": observaciones
+                    "Monto": monto_pago
                 }])
                 pagos = pd.concat([pagos,nuevo],ignore_index=True)
                 guardar_csv(pagos,"pagos.csv")
@@ -222,16 +212,6 @@ if menu == "Dashboard":
 
     st.subheader("Seguimiento de Pagos por Caso")
     if not df_saldo.empty:
-        st.dataframe(df_saldo[["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo","Observaciones"]])
-    else:
-        st.write("No hay casos registrados.")
-
-# ===== PESTAÑA CUOTA LITIS SIMPLE =====
-if menu == "Cuota Litis":
-    st.title("Cuota Litis por Caso")
-    if not casos.empty:
-        df_litis = casos.copy()
-        df_litis["Monto_Cuota_Litis"] = df_litis["Monto"] * df_litis["Cuota_Litis"]/100
-        st.dataframe(df_litis[["Cliente","Expediente","Cuota_Litis","Monto_Cuota_Litis","Observaciones"]])
+        st.dataframe(df_saldo[["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo"]])
     else:
         st.write("No hay casos registrados.")
