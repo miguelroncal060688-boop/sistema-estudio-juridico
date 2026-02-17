@@ -183,20 +183,36 @@ if menu == "Pagos":
 # ===== DASHBOARD =====
 if menu == "Dashboard":
     st.title("Dashboard Financiero")
+    
     total_clientes = len(clientes)
     total_casos = len(casos)
     total_ingresos = pagos["Monto"].sum() if not pagos.empty else 0
 
-    df_saldo = casos.copy()
-    df_saldo["Pagado"] = df_saldo["ID_CASO"].apply(lambda x: pagos[pagos["ID_CASO"]==x]["Monto"].sum() if not pagos.empty else 0)
-    df_saldo["Saldo"] = df_saldo["Monto"] - df_saldo["Pagado"]
-    total_pendiente = df_saldo["Saldo"].sum() if not df_saldo.empty else 0
+    # Crear dataframe para seguimiento de saldo
+    if not casos.empty:
+        df_saldo = casos.copy()
+        # Asegurar columnas
+        for col in ["Contraparte","Monto"]:
+            if col not in df_saldo.columns:
+                df_saldo[col] = "" if col=="Contraparte" else 0.0
+        # Calcular Pagado y Saldo
+        df_saldo["Pagado"] = df_saldo["ID_CASO"].apply(
+            lambda x: pagos[pagos["ID_CASO"]==x]["Monto"].sum() if not pagos.empty else 0
+        )
+        df_saldo["Saldo"] = df_saldo["Monto"] - df_saldo["Pagado"]
+        total_pendiente = df_saldo["Saldo"].sum()
+    else:
+        df_saldo = pd.DataFrame(columns=["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo"])
+        total_pendiente = 0
 
     col1,col2,col3,col4 = st.columns(4)
     col1.metric("Clientes", total_clientes)
     col2.metric("Casos", total_casos)
-    col3.metric("Ingresos", f"S/ {total_ingresos}")
-    col4.metric("Pendiente", f"S/ {total_pendiente}")
+    col3.metric("Ingresos", f"S/ {total_ingresos:.2f}")
+    col4.metric("Pendiente", f"S/ {total_pendiente:.2f}")
 
     st.subheader("Seguimiento de Pagos por Caso")
-    st.dataframe(df_saldo[["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo"]])
+    if not df_saldo.empty:
+        st.dataframe(df_saldo[["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo"]])
+    else:
+        st.write("No hay casos registrados.")
