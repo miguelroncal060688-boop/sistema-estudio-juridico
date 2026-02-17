@@ -34,20 +34,23 @@ def export_df_to_excel(df,nombre_archivo):
     df.to_excel(nombre_archivo,index=False)
 
 # ===============================
-# SESIÓN
+# SESIÓN SEGURA
 # ===============================
 if "usuario" not in st.session_state:
     st.session_state.usuario = None
+if "rol" not in st.session_state:
     st.session_state.rol = None
 if "edit_caso" not in st.session_state:
     st.session_state.edit_caso = None
 if "edit_pago" not in st.session_state:
     st.session_state.edit_pago = None
+if "login_ok" not in st.session_state:
+    st.session_state.login_ok = False  # flag login
 
 # ===============================
 # LOGIN
 # ===============================
-if st.session_state.usuario is None:
+if not st.session_state.login_ok:
     st.title("🔒 Ingreso al Sistema")
     usuarios_df = cargar_csv(USUARIOS_CSV, ["usuario","contrasena","rol"])
     usuario_input = st.text_input("Usuario")
@@ -57,14 +60,15 @@ if st.session_state.usuario is None:
         if not user.empty:
             st.session_state.usuario = usuario_input
             st.session_state.rol = user.iloc[0]["rol"]
-            st.success(f"Bienvenido {usuario_input}")
+            st.session_state.login_ok = True
             st.experimental_rerun()
         else:
             st.error("Usuario o contraseña incorrectos")
-else:
-    # ===============================
-    # MENÚ PRINCIPAL
-    # ===============================
+
+# ===============================
+# MENÚ PRINCIPAL
+# ===============================
+if st.session_state.login_ok:
     menu_options = ["Clientes","Casos","Pagos","Contratos","Historial"]
     if st.session_state.rol=="admin":
         menu_options.append("Usuarios")
