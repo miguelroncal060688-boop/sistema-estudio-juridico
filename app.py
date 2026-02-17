@@ -35,17 +35,18 @@ clientes = cargar_csv("clientes.csv")
 casos = cargar_csv("casos.csv")
 pagos = cargar_csv("pagos.csv")
 
-menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Contrato"])
+menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos"])
 
 # ================= CLIENTES =================
 if menu == "Clientes":
     st.title("Gestión de Clientes")
+
+    # Crear cliente
     nombre = st.text_input("Nombre completo")
     dni = st.text_input("DNI")
     celular = st.text_input("Celular")
     correo = st.text_input("Correo")
     direccion = st.text_input("Dirección")
-
     if st.button("Guardar Cliente"):
         nuevo = pd.DataFrame([{
             "Nombre": nombre,
@@ -58,12 +59,41 @@ if menu == "Clientes":
         guardar_csv(clientes,"clientes.csv")
         st.rerun()
 
+    # Mostrar y editar/eliminar
     if not clientes.empty:
-        st.dataframe(clientes)
+        st.subheader("Clientes registrados")
+        for i in clientes.index:
+            c = clientes.loc[i]
+            st.write(f"{c['Nombre']} | DNI: {c['DNI']} | Celular: {c['Celular']}")
+            col_edit, col_del = st.columns([1,1])
+            if col_edit.button("Editar",key=f"edit_c{i}"):
+                st.session_state.edit_cliente = i
+            if col_del.button("Eliminar",key=f"del_c{i}"):
+                clientes.drop(i,inplace=True)
+                clientes.reset_index(drop=True,inplace=True)
+                guardar_csv(clientes,"clientes.csv")
+                st.rerun()
+
+    # Editar cliente
+    if "edit_cliente" in st.session_state:
+        i = st.session_state.edit_cliente
+        c = clientes.loc[i]
+        st.subheader(f"Editar Cliente: {c['Nombre']}")
+        nombre_e = st.text_input("Nombre completo",c['Nombre'])
+        dni_e = st.text_input("DNI",c['DNI'])
+        celular_e = st.text_input("Celular",c['Celular'])
+        correo_e = st.text_input("Correo",c['Correo'])
+        direccion_e = st.text_input("Dirección",c['Dirección'])
+        if st.button("Guardar Cambios Cliente"):
+            clientes.loc[i] = [nombre_e,dni_e,celular_e,correo_e,direccion_e]
+            guardar_csv(clientes,"clientes.csv")
+            del st.session_state.edit_cliente
+            st.rerun()
 
 # ================= CASOS =================
 if menu == "Casos":
     st.title("Gestión de Casos")
+
     cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [])
     expediente = st.text_input("Número de expediente")
     año = st.text_input("Año")
@@ -89,18 +119,50 @@ if menu == "Casos":
         st.rerun()
 
     if not casos.empty:
-        st.dataframe(casos)
+        st.subheader("Casos registrados")
+        for i in casos.index:
+            c = casos.loc[i]
+            st.write(f"{c['Cliente']} | {c['ID_CASO']} | S/ {c['Monto']}")
+            col_edit, col_del = st.columns([1,1])
+            if col_edit.button("Editar",key=f"edit_case{i}"):
+                st.session_state.edit_caso = i
+            if col_del.button("Eliminar",key=f"del_case{i}"):
+                casos.drop(i,inplace=True)
+                casos.reset_index(drop=True,inplace=True)
+                guardar_csv(casos,"casos.csv")
+                st.rerun()
+
+    # Editar caso
+    if "edit_caso" in st.session_state:
+        i = st.session_state.edit_caso
+        c = casos.loc[i]
+        st.subheader(f"Editar Caso: {c['ID_CASO']}")
+        expediente_e = st.text_input("Número de expediente",c['Expediente'])
+        año_e = st.text_input("Año",c['Año'])
+        cliente_e = st.selectbox("Cliente", clientes["Nombre"], index=clientes[clientes["Nombre"]==c['Cliente']].index[0])
+        materia_e = st.text_input("Materia",c['Materia'])
+        monto_e = st.number_input("Monto pactado",c['Monto'])
+        cuota_litis_e = st.number_input("Cuota Litis (%)",c['Cuota_Litis'])
+        monot_base_e = st.number_input("Monto Base",c['Monot_Base'])
+        if st.button("Guardar Cambios Caso"):
+            casos.loc[i] = [f"{expediente_e}-{año_e}-{cliente_e}",cliente_e,expediente_e,año_e,materia_e,monto_e,cuota_litis_e,monot_base_e]
+            guardar_csv(casos,"casos.csv")
+            del st.session_state.edit_caso
+            st.rerun()
 
 # ================= PAGOS =================
 if menu == "Pagos":
     st.title("Registro de Pagos")
-    caso = st.selectbox("Caso", casos["ID_CASO"] if not casos.empty else [])
+
+    caso_sel = st.selectbox("Caso", casos["ID_CASO"] if not casos.empty else [])
+    cliente_sel = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [])
     fecha = st.date_input("Fecha")
     monto_pago = st.number_input("Monto pagado",0.0)
 
     if st.button("Registrar Pago"):
         nuevo = pd.DataFrame([{
-            "ID_CASO":caso,
+            "ID_CASO":caso_sel,
+            "Cliente":cliente_sel,
             "Fecha":fecha,
             "Monto":monto_pago
         }])
@@ -109,43 +171,36 @@ if menu == "Pagos":
         st.rerun()
 
     if not pagos.empty:
-        st.dataframe(pagos)
+        st.subheader("Pagos registrados")
+        for i in pagos.index:
+            p = pagos.loc[i]
+            st.write(f"{p['Cliente']} | {p['ID_CASO']} | S/ {p['Monto']} | {p['Fecha']}")
+            col_del = st.columns([1])
+            if st.button("Eliminar",key=f"del_pago{i}"):
+                pagos.drop(i,inplace=True)
+                pagos.reset_index(drop=True,inplace=True)
+                guardar_csv(pagos,"pagos.csv")
+                st.rerun()
 
 # ================= DASHBOARD =================
 if menu == "Dashboard":
     st.title("Dashboard Financiero")
+
     total_clientes = len(clientes)
     total_casos = len(casos)
     total_ingresos = pagos["Monto"].sum() if not pagos.empty else 0
-    total_pendiente = 0
-    if not casos.empty:
-        for i in casos.index:
-            id_caso = casos.loc[i,"ID_CASO"]
-            total_pagado = pagos[pagos["ID_CASO"]==id_caso]["Monto"].sum() if not pagos.empty else 0
-            total_pendiente += casos.loc[i,"Monto"] - total_pagado
+
+    # Saldo pendiente por caso
+    df_saldo = casos.copy()
+    df_saldo["Pagado"] = df_saldo["ID_CASO"].apply(lambda x: pagos[pagos["ID_CASO"]==x]["Monto"].sum() if not pagos.empty else 0)
+    df_saldo["Saldo"] = df_saldo["Monto"] - df_saldo["Pagado"]
+    total_pendiente = df_saldo["Saldo"].sum() if not df_saldo.empty else 0
+
     col1,col2,col3,col4 = st.columns(4)
     col1.metric("Clientes", total_clientes)
     col2.metric("Casos", total_casos)
     col3.metric("Ingresos", f"S/ {total_ingresos}")
     col4.metric("Pendiente", f"S/ {total_pendiente}")
 
-# ================= CONTRATO =================
-if menu == "Contrato":
-    st.title("Generar Contrato")
-    caso = st.selectbox("Caso", casos["ID_CASO"] if not casos.empty else [])
-    contraparte = st.text_input("Contraparte")
-    if caso:
-        c = casos[casos["ID_CASO"]==caso].iloc[0]
-        contrato_text = f"""
-CONTRATO DE PRESTACIÓN DE SERVICIOS
-
-Conste por el presente documento el CONTRATO DE LOCACIÓN DE SERVICIOS que celebran de una parte el Sr. MIGUEL ANTONIO RONCAL LIÑÁN, identificado con DNI N° 70205926, domiciliado en el Psje. Victoria N° 280 – Barrio San Martín, a quien en adelante se denominará EL LOCADOR; y, de la otra parte, {contraparte}, a quien en adelante se denominará EL CLIENTE.
-
-EXPEDIENTE: {c['Expediente']} - AÑO: {c['Año']}
-MONTO PACTADO: S/ {c['Monto']}
-CUOTA LITIS: {c['Cuota_Litis']}%
-MONTO BASE: S/ {c['Monot_Base']}
-
-Firmado a los {datetime.today().day} días del mes de {datetime.today().strftime('%B')} del año {datetime.today().year}.
-        """
-        st.text_area("Contrato Generado",contrato_text,height=500)
+    st.subheader("Saldos por Caso")
+    st.dataframe(df_saldo[["ID_CASO","Cliente","Monto","Pagado","Saldo"]])
