@@ -1,184 +1,189 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
-from fpdf import FPDF
+import os
 from datetime import datetime
-import io
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import inch
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="LexControl v2.0", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sistema Jurídico PRO", layout="wide")
 
-# --- BASE DE DATOS (Auto-creación) ---
-def conectar_db():
-    conn = sqlite3.connect('estudio_juridico.db', check_same_thread=False)
-    return conn
+# ================= LOGIN =================
 
-def init_db():
-    conn = conectar_db()
-    c = conn.cursor()
-    # Clientes: Natural o Jurídica
-    c.execute('''CREATE TABLE IF NOT EXISTS clientes 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, tipo TEXT, nombre TEXT, documento TEXT, 
-                  direccion TEXT, correo TEXT, celular TEXT, contacto_emergencia TEXT, 
-                  tel_emergencia TEXT, representante TEXT, dni_rep TEXT)''')
-    # Casos
-    c.execute('''CREATE TABLE IF NOT EXISTS casos 
-                 (id_exp TEXT PRIMARY KEY, cliente_id INTEGER, materia TEXT, 
-                  etapa TEXT, abogado TEXT, monto_pactado REAL, cuota_litis_pct REAL, 
-                  pretension REAL, saldo_monto REAL, FOREIGN KEY(cliente_id) REFERENCES clientes(id))''')
-    # Pagos
-    c.execute('''CREATE TABLE IF NOT EXISTS pagos 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, caso_id TEXT, fecha TEXT, 
-                  monto_pagado REAL, concepto TEXT, FOREIGN KEY(caso_id) REFERENCES casos(id_exp))''')
-    conn.commit()
-    conn.close()
+PASSWORD = "estudio123"
 
-init_db()
+if "login" not in st.session_state:
+    st.session_state.login = False
 
-# --- GENERADOR DE CONTRATO PROFESIONAL ---
-class ContratoPDF(FPDF):
-    def header(self):
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, 'CONTRATO DE PRESTACIÓN DE SERVICIOS LEGALES', 0, 1, 'C')
-        self.ln(10)
+if not st.session_state.login:
+    st.title("Acceso al Sistema Jurídico")
+    pwd = st.text_input("Ingrese contraseña", type="password")
+    if st.button("Ingresar"):
+        if pwd == PASSWORD:
+            st.session_state.login = True
+            st.rerun()
+        else:
+            st.error("Contraseña incorrecta")
+    st.stop()
 
-def generar_contrato_pdf(cli, casos):
-    pdf = ContratoPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=10)
-    
-    # Datos de las partes
-    parte_cliente = f"{cli['nombre'].upper()} con DNI/RUC N° {cli['documento']}"
-    if cli['tipo'] == "Jurídica":
-        parte_cliente += f", representada por su gerente {cli['representante']} con DNI {cli['dni_rep']}"
+# ================= FUNCIONES =================
 
-    texto_cuerpo = f"""Conste por el presente documento el CONTRATO DE LOCACIÓN DE SERVICIOS que celebran de una parte el Sr. MIGUEL ANTONIO RONCAL LIÑÁN, identificado con DNI N° 70205926, domiciliado en el Psje. Victoria N° 280 – Barrio San Martín, Cajamarca, a quien en adelante se denominará EL LOCADOR; y, de la otra parte, {parte_cliente}, domiciliado en {cli['direccion']}, a quien en adelante se denominará EL CLIENTE.
+def cargar_csv(nombre):
+    if os.path.exists(nombre):
+        return pd.read_csv(nombre)
+    return pd.DataFrame()
 
-PRIMERO: EL LOCADOR es abogado habilitado con colegiatura N° 2710. EL CLIENTE requiere sus servicios para los siguientes procesos:
-"""
-    pdf.multi_cell(0, 5, texto_cuerpo)
-    pdf.ln(5)
+def guardar_csv(df, nombre):
+    df.to_csv(nombre, index=False)
 
-    # Detalle de Casos y Montos
-    for idx, c in enumerate(casos):
-        pdf.set_font("Arial", 'B', 10)
-        pdf.multi_cell(0, 5, f"{idx+1}. Expediente N° {c[0]} - Materia: {c[2]}")
-        pdf.set_font("Arial", size=10)
-        pdf.multi_cell(0, 5, f"   Contraprestación: S/ {c[5]:,.2f} + {c[6]}% de Cuota Litis.")
-    
-    clausulas_finales = f"""
-TERCERO: Los pagos se realizarán de común acuerdo. Los gastos operativos corren por cuenta de EL CLIENTE.
-SÉPTIMO: Para cualquier controversia, las partes se someten a la Sede Central de la Corte Superior de Justicia de Cajamarca.
+clientes = cargar_csv("clientes.csv")
+casos = cargar_csv("casos.csv")
+pagos = cargar_csv("pagos.csv")
 
-Se firma en señal de conformidad a los {datetime.now().day} días del mes de {datetime.now().month} del año {datetime.now().year}.
-"""
-    pdf.ln(10)
-    pdf.multi_cell(0, 5, clausulas_finales)
-    
-    return pdf.output(dest='S').encode('latin-1')
+menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Contrato"])
 
-# --- INTERFAZ ---
-def main():
-    st.sidebar.title("🔐 LexControl Login")
-    user = st.sidebar.text_input("Usuario")
-    pas = st.sidebar.text_input("Contraseña", type="password")
+# ================= CLIENTES =================
 
-    if user == "admin" and pas == "abogado2026": # CAMBIA ESTO PARA SEGURIDAD
-        conn = conectar_db()
-        st.title("⚖️ Sistema de Gestión Jurídica")
+if menu == "Clientes":
+    st.title("Gestión de Clientes")
 
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "👤 Clientes y Casos", "💰 Pagos y Cobros", "📄 Contratos y Reportes"])
+    nombre = st.text_input("Nombre completo")
+    dni = st.text_input("DNI")
+    celular = st.text_input("Celular")
+    correo = st.text_input("Correo")
+    direccion = st.text_input("Dirección")
 
-        with tab1:
-            st.subheader("Estado Financiero del Estudio")
-            df_c = pd.read_sql("SELECT * FROM casos", conn)
-            df_p = pd.read_sql("SELECT * FROM pagos", conn)
-            
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Expedientes", len(df_c))
-            c2.metric("Total Pactado", f"S/ {df_c['monto_pactado'].sum():,.2f}")
-            c3.metric("Total Cobrado", f"S/ {df_p['monto_pagado'].sum():,.2f}")
-            c4.metric("Pendiente", f"S/ {df_c['saldo_monto'].sum():,.2f}", delta_color="inverse")
-            
-            st.write("### Listado Maestro de Casos")
-            st.dataframe(df_c, use_container_width=True)
+    if st.button("Guardar Cliente"):
+        nuevo = pd.DataFrame([{
+            "Nombre": nombre,
+            "DNI": dni,
+            "Celular": celular,
+            "Correo": correo,
+            "Dirección": direccion
+        }])
+        clientes = pd.concat([clientes, nuevo], ignore_index=True)
+        guardar_csv(clientes,"clientes.csv")
+        st.rerun()
 
-        with tab2:
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.write("### Registrar Cliente")
-                t_cli = st.selectbox("Tipo Cliente", ["Natural", "Jurídica"])
-                nom = st.text_input("Nombre Completo / Razón Social")
-                doc = st.text_input("DNI o RUC")
-                dir_c = st.text_input("Dirección Fiscal")
-                cel = st.text_input("Celular de Contacto")
-                rep = st.text_input("Representante Legal (Solo Jurídica)")
-                d_rep = st.text_input("DNI Representante")
-                if st.button("💾 Guardar Cliente"):
-                    conn.execute("INSERT INTO clientes (tipo, nombre, documento, direccion, celular, representante, dni_rep) VALUES (?,?,?,?,?,?,?)", 
-                                 (t_cli, nom, doc, dir_c, cel, rep, d_rep))
-                    conn.commit()
-                    st.success("Cliente creado correctamente")
+    if not clientes.empty:
+        st.dataframe(clientes)
 
-            with col_b:
-                st.write("### Abrir Nuevo Expediente")
-                clis = pd.read_sql("SELECT id, nombre FROM clientes", conn)
-                if not clis.empty:
-                    c_id = st.selectbox("Seleccionar Cliente", clis['id'].tolist(), format_func=lambda x: clis[clis['id']==x]['nombre'].values[0])
-                    exp = st.text_input("N° Expediente-Año (Ej: 1540-2024)")
-                    mat = st.text_input("Materia (Ej: Laboral / Alimentos)")
-                    abog = st.text_input("Abogado Asignado")
-                    mnt = st.number_input("Monto Pactado S/", min_value=0.0)
-                    lit = st.number_input("Cuota Litis %", 0, 100)
-                    if st.button("📂 Registrar Caso"):
-                        conn.execute("INSERT INTO casos (id_exp, cliente_id, materia, abogado, monto_pactado, cuota_litis_pct, saldo_monto) VALUES (?,?,?,?,?,?,?)",
-                                     (exp, c_id, mat, abog, mnt, lit, mnt))
-                        conn.commit()
-                        st.success("Expediente aperturado")
+# ================= CASOS =================
 
-        with tab3:
-            st.write("### Control de Pagos por Expediente")
-            casos_list = pd.read_sql("SELECT id_exp, saldo_monto FROM casos WHERE saldo_monto > 0", conn)
-            if not casos_list.empty:
-                c_sel = st.selectbox("Seleccionar Expediente Deudor", casos_list['id_exp'].tolist())
-                m_pago = st.number_input("Monto Recibido S/", min_value=1.0)
-                f_pago = st.date_input("Fecha de Pago")
-                concepto = st.text_input("Concepto (Ej: Adelanto / Cuota 1)")
-                if st.button("💵 Registrar Cobro"):
-                    conn.execute("INSERT INTO pagos (caso_id, fecha, monto_pagado, concepto) VALUES (?,?,?,?)", (c_sel, str(f_pago), m_pago, concepto))
-                    conn.execute("UPDATE casos SET saldo_monto = saldo_monto - ? WHERE id_exp = ?", (m_pago, c_sel))
-                    conn.commit()
-                    st.rerun()
-            else:
-                st.info("No hay saldos pendientes.")
+if menu == "Casos":
+    st.title("Gestión de Casos")
 
-        with tab4:
-            st.write("### Generación de Documentos")
-            clis_doc = pd.read_sql("SELECT * FROM clientes", conn)
-            if not clis_doc.empty:
-                c_doc = st.selectbox("Seleccionar Cliente para Documentos", clis_doc['id'].tolist(), format_func=lambda x: clis_doc[clis_doc['id']==x]['nombre'].values[0])
-                
-                # Datos del cliente seleccionado
-                cli_data = clis_doc[clis_doc['id'] == c_doc].iloc[0]
-                casos_data = pd.read_sql(f"SELECT * FROM casos WHERE cliente_id = {c_doc}", conn).values.tolist()
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("📄 Crear Contrato PDF"):
-                        pdf_out = generar_contrato_pdf(cli_data, casos_data)
-                        st.download_button("⬇️ Descargar Contrato", pdf_out, f"Contrato_{cli_data['nombre']}.pdf")
-                
-                with col2:
-                    if st.button("📊 Exportar Excel"):
-                        output = io.BytesIO()
-                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            pd.read_sql("SELECT * FROM clientes", conn).to_excel(writer, sheet_name='Clientes')
-                            pd.read_sql("SELECT * FROM casos", conn).to_excel(writer, sheet_name='Casos')
-                            pd.read_sql("SELECT * FROM pagos", conn).to_excel(writer, sheet_name='Pagos')
-                        st.download_button("⬇️ Descargar Reporte Completo", output.getvalue(), "Reporte_Estudio.xlsx")
+    cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [])
+    materia = st.text_input("Materia")
+    expediente = st.text_input("Número de expediente")
+    año = st.text_input("Año")
+    monto = st.number_input("Monto pactado",0.0)
 
-    else:
-        st.warning("⚠️ Por favor, ingrese sus credenciales en la barra lateral.")
+    if st.button("Guardar Caso"):
+        identificador = f"{expediente}-{año}"
 
-if __name__ == '__main__':
-    main()
+        nuevo = pd.DataFrame([{
+            "ID_CASO": identificador,
+            "Cliente":cliente,
+            "Materia":materia,
+            "Expediente":expediente,
+            "Año":año,
+            "Monto":monto
+        }])
+
+        casos = pd.concat([casos,nuevo],ignore_index=True)
+        guardar_csv(casos,"casos.csv")
+        st.rerun()
+
+    if not casos.empty:
+        for i in casos.index:
+            id_caso = casos.loc[i,"ID_CASO"]
+
+            total_pagado = pagos[pagos["ID_CASO"]==id_caso]["Monto"].sum() if not pagos.empty else 0
+            saldo = casos.loc[i,"Monto"] - total_pagado
+
+            st.write(
+                f"{casos.loc[i,'Cliente']} | "
+                f"{id_caso} | "
+                f"Saldo: S/ {saldo}"
+            )
+
+# ================= PAGOS =================
+
+if menu == "Pagos":
+    st.title("Registro de Pagos")
+
+    caso = st.selectbox("Caso", casos["ID_CASO"] if not casos.empty else [])
+    fecha = st.date_input("Fecha")
+    monto_pago = st.number_input("Monto pagado",0.0)
+
+    if st.button("Registrar Pago"):
+        nuevo = pd.DataFrame([{
+            "ID_CASO":caso,
+            "Fecha":fecha,
+            "Monto":monto_pago
+        }])
+
+        pagos = pd.concat([pagos,nuevo],ignore_index=True)
+        guardar_csv(pagos,"pagos.csv")
+        st.rerun()
+
+    if not pagos.empty:
+        st.dataframe(pagos)
+
+# ================= DASHBOARD =================
+
+if menu == "Dashboard":
+    st.title("Dashboard Financiero")
+
+    total_clientes = len(clientes)
+    total_casos = len(casos)
+    total_ingresos = pagos["Monto"].sum() if not pagos.empty else 0
+
+    total_pendiente = 0
+    if not casos.empty:
+        for i in casos.index:
+            id_caso = casos.loc[i,"ID_CASO"]
+            total_pagado = pagos[pagos["ID_CASO"]==id_caso]["Monto"].sum() if not pagos.empty else 0
+            total_pendiente += casos.loc[i,"Monto"] - total_pagado
+
+    col1,col2,col3,col4 = st.columns(4)
+    col1.metric("Clientes", total_clientes)
+    col2.metric("Casos", total_casos)
+    col3.metric("Ingresos", f"S/ {total_ingresos}")
+    col4.metric("Pendiente", f"S/ {total_pendiente}")
+
+# ================= CONTRATO PDF =================
+
+if menu == "Contrato":
+    st.title("Generar Contrato PDF")
+
+    caso = st.selectbox("Caso", casos["ID_CASO"] if not casos.empty else [])
+
+    if st.button("Generar PDF"):
+        archivo = f"Contrato_{caso}.pdf"
+        doc = SimpleDocTemplate(archivo,pagesize=A4)
+        elementos = []
+
+        estilos = getSampleStyleSheet()
+        estilo = estilos["Normal"]
+
+        texto = f"""
+        CONTRATO DE PRESTACIÓN DE SERVICIOS LEGALES
+
+        Caso: {caso}
+
+        El presente contrato regula la prestación de servicios legales
+        respecto del expediente indicado.
+
+        Fecha: {datetime.today().strftime("%d/%m/%Y")}
+        """
+
+        elementos.append(Paragraph(texto, estilo))
+        elementos.append(Spacer(1,0.5*inch))
+
+        doc.build(elementos)
+
+        with open(archivo,"rb") as f:
+            st.download_button("Descargar Contrato PDF",f,archivo)
