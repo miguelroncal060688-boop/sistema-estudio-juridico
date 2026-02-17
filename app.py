@@ -40,42 +40,46 @@ menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos"])
 if menu == "Clientes":
     st.title("Gestión de Clientes")
 
-    # Crear cliente
     with st.form("form_cliente"):
         nombre = st.text_input("Nombre completo")
         dni = st.text_input("DNI")
         celular = st.text_input("Celular")
         correo = st.text_input("Correo")
         direccion = st.text_input("Dirección")
-        submitted = st.form_submit_button("Guardar Cliente")
+        submitted = st.form_submit_button("Guardar Cliente", key="guardar_cliente")
         if submitted:
-            nuevo = pd.DataFrame([{"Nombre": nombre, "DNI": dni, "Celular": celular, "Correo": correo, "Dirección": direccion}])
+            nuevo = pd.DataFrame([{
+                "Nombre": nombre,
+                "DNI": dni,
+                "Celular": celular,
+                "Correo": correo,
+                "Dirección": direccion
+            }])
             clientes = pd.concat([clientes, nuevo], ignore_index=True)
             guardar_csv(clientes,"clientes.csv")
             st.success("Cliente agregado")
             st.experimental_rerun()
 
-    # Mostrar clientes
     st.subheader("Clientes registrados")
     if not clientes.empty:
-        sel_cliente = st.selectbox("Selecciona Cliente para Editar/Eliminar", clientes["Nombre"])
+        sel_cliente = st.selectbox("Selecciona Cliente para Editar/Eliminar", clientes["Nombre"], key="sel_cliente")
         idx = clientes[clientes["Nombre"]==sel_cliente].index[0]
         st.write(clientes.loc[idx])
         col1,col2 = st.columns(2)
-        if col1.button("Editar Cliente"):
-            with st.form("edit_cliente_form"):
+        if col1.button("Editar Cliente", key=f"edit_cliente_{idx}"):
+            with st.form(f"edit_cliente_form_{idx}"):
                 nombre_e = st.text_input("Nombre completo", clientes.loc[idx,"Nombre"])
                 dni_e = st.text_input("DNI", clientes.loc[idx,"DNI"])
                 celular_e = st.text_input("Celular", clientes.loc[idx,"Celular"])
                 correo_e = st.text_input("Correo", clientes.loc[idx,"Correo"])
                 direccion_e = st.text_input("Dirección", clientes.loc[idx,"Dirección"])
-                submit_edit = st.form_submit_button("Guardar Cambios")
+                submit_edit = st.form_submit_button("Guardar Cambios", key=f"submit_edit_cliente_{idx}")
                 if submit_edit:
                     clientes.loc[idx] = [nombre_e,dni_e,celular_e,correo_e,direccion_e]
                     guardar_csv(clientes,"clientes.csv")
                     st.success("Cliente actualizado")
                     st.experimental_rerun()
-        if col2.button("Eliminar Cliente"):
+        if col2.button("Eliminar Cliente", key=f"del_cliente_{idx}"):
             clientes.drop(idx, inplace=True)
             clientes.reset_index(drop=True,inplace=True)
             guardar_csv(clientes,"clientes.csv")
@@ -87,7 +91,7 @@ if menu == "Casos":
     st.title("Gestión de Casos")
 
     with st.form("form_caso"):
-        cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [])
+        cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [], key="cliente_nuevo")
         expediente = st.text_input("Número de expediente")
         año = st.text_input("Año")
         materia = st.text_input("Materia")
@@ -95,7 +99,7 @@ if menu == "Casos":
         cuota_litis = st.number_input("Cuota Litis (%)",0.0)
         monot_base = st.number_input("Monto Base",0.0)
         contraparte = st.text_input("Contraparte")
-        submitted = st.form_submit_button("Guardar Caso")
+        submitted = st.form_submit_button("Guardar Caso", key="guardar_caso")
         if submitted:
             identificador = f"{expediente}-{año}-{cliente}"
             nuevo = pd.DataFrame([{
@@ -114,30 +118,29 @@ if menu == "Casos":
             st.success("Caso agregado")
             st.experimental_rerun()
 
-    # Mostrar casos
     st.subheader("Casos registrados")
     if not casos.empty:
-        sel_caso = st.selectbox("Selecciona Caso para Editar/Eliminar", casos["ID_CASO"])
+        sel_caso = st.selectbox("Selecciona Caso para Editar/Eliminar", casos["ID_CASO"], key="sel_caso")
         idx = casos[casos["ID_CASO"]==sel_caso].index[0]
         st.write(casos.loc[idx])
         col1,col2 = st.columns(2)
-        if col1.button("Editar Caso"):
-            with st.form("edit_caso_form"):
+        if col1.button("Editar Caso", key=f"edit_caso_{idx}"):
+            with st.form(f"edit_caso_form_{idx}"):
                 expediente_e = st.text_input("Número de expediente", casos.loc[idx,"Expediente"])
                 año_e = st.text_input("Año", casos.loc[idx,"Año"])
-                cliente_e = st.selectbox("Cliente", clientes["Nombre"], index=clientes[clientes["Nombre"]==casos.loc[idx,"Cliente"]].index[0])
+                cliente_e = st.selectbox("Cliente", clientes["Nombre"], index=clientes[clientes["Nombre"]==casos.loc[idx,"Cliente"]].index[0], key=f"cliente_edit_{idx}")
                 materia_e = st.text_input("Materia", casos.loc[idx,"Materia"])
                 monto_e = st.number_input("Monto pactado", casos.loc[idx,"Monto"])
                 cuota_litis_e = st.number_input("Cuota Litis (%)", casos.loc[idx,"Cuota_Litis"])
                 monot_base_e = st.number_input("Monto Base", casos.loc[idx,"Monot_Base"])
                 contraparte_e = st.text_input("Contraparte", casos.loc[idx,"Contraparte"])
-                submit_edit = st.form_submit_button("Guardar Cambios")
+                submit_edit = st.form_submit_button("Guardar Cambios", key=f"submit_edit_caso_{idx}")
                 if submit_edit:
                     casos.loc[idx] = [f"{expediente_e}-{año_e}-{cliente_e}", cliente_e, expediente_e, año_e, materia_e, monto_e, cuota_litis_e, monot_base_e, contraparte_e]
                     guardar_csv(casos,"casos.csv")
                     st.success("Caso actualizado")
                     st.experimental_rerun()
-        if col2.button("Eliminar Caso"):
+        if col2.button("Eliminar Caso", key=f"del_caso_{idx}"):
             casos.drop(idx,inplace=True)
             casos.reset_index(drop=True,inplace=True)
             guardar_csv(casos,"casos.csv")
@@ -150,11 +153,11 @@ if menu == "Pagos":
 
     if not clientes.empty and not casos.empty:
         with st.form("form_pago"):
-            caso_sel = st.selectbox("Caso", casos["ID_CASO"])
-            cliente_sel = st.selectbox("Cliente", clientes["Nombre"])
+            caso_sel = st.selectbox("Caso", casos["ID_CASO"], key="caso_pago")
+            cliente_sel = st.selectbox("Cliente", clientes["Nombre"], key="cliente_pago")
             fecha = st.date_input("Fecha")
             monto_pago = st.number_input("Monto pagado",0.0)
-            submitted = st.form_submit_button("Registrar Pago")
+            submitted = st.form_submit_button("Registrar Pago", key="guardar_pago")
             if submitted:
                 nuevo = pd.DataFrame([{
                     "ID_CASO": caso_sel,
@@ -167,13 +170,12 @@ if menu == "Pagos":
                 st.success("Pago registrado")
                 st.experimental_rerun()
 
-    # Mostrar pagos y eliminar
     st.subheader("Pagos registrados")
     if not pagos.empty:
-        sel_pago = st.selectbox("Selecciona Pago para eliminar", pagos.index)
+        sel_pago = st.selectbox("Selecciona Pago para eliminar", pagos.index, key="sel_pago")
         p = pagos.loc[sel_pago]
         st.write(p)
-        if st.button("Eliminar Pago"):
+        if st.button("Eliminar Pago", key=f"del_pago_{sel_pago}"):
             pagos.drop(sel_pago,inplace=True)
             pagos.reset_index(drop=True,inplace=True)
             guardar_csv(pagos,"pagos.csv")
@@ -188,14 +190,11 @@ if menu == "Dashboard":
     total_casos = len(casos)
     total_ingresos = pagos["Monto"].sum() if not pagos.empty else 0
 
-    # Crear dataframe para seguimiento de saldo
     if not casos.empty:
         df_saldo = casos.copy()
-        # Asegurar columnas
         for col in ["Contraparte","Monto"]:
             if col not in df_saldo.columns:
                 df_saldo[col] = "" if col=="Contraparte" else 0.0
-        # Calcular Pagado y Saldo
         df_saldo["Pagado"] = df_saldo["ID_CASO"].apply(
             lambda x: pagos[pagos["ID_CASO"]==x]["Monto"].sum() if not pagos.empty else 0
         )
