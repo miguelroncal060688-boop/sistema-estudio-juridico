@@ -292,3 +292,64 @@ if menu == "Pagos Cuota Litis":
                 guardar_csv(pagos_litis,"pagos_litis.csv")
                 st.success("Pago eliminado")
                 st.experimental_rerun()
+# ===== PESTAÑA RESUMEN =====
+if menu == "Resumen Financiero":
+    st.title("Resumen Financiero General")
+
+    if not casos.empty:
+        # Crear DataFrame de resumen
+        resumen = casos.copy()
+        resumen["Monto_Cuota_Litis"] = resumen["Monot_Base"] * resumen["Cuota_Litis"]/100
+
+        # Honorarios pagados
+        def pagos_honorarios(id_caso):
+            if pagos.empty:
+                return 0.0
+            return pagos[pagos["ID_CASO"]==id_caso]["Monto"].sum()
+        resumen["Pagado_Honorarios"] = resumen["ID_CASO"].apply(pagos_honorarios)
+        resumen["Saldo_Honorarios"] = resumen["Monto"] - resumen["Pagado_Honorarios"]
+
+        # Pagos cuota litis
+        def pagos_cuota_litis(id_caso):
+            if pagos_litis.empty:
+                return 0.0
+            return pagos_litis[pagos_litis["ID_CASO"]==id_caso]["Monto"].sum()
+        resumen["Pagado_Cuota"] = resumen["ID_CASO"].apply(pagos_cuota_litis)
+        resumen["Saldo_Cuota"] = resumen["Monto_Cuota_Litis"] - resumen["Pagado_Cuota"]
+
+        # Totales combinados
+        resumen["Total_Pactado_Cuota"] = resumen["Monto"] + resumen["Monto_Cuota_Litis"]
+        resumen["Total_Pagado"] = resumen["Pagado_Honorarios"] + resumen["Pagado_Cuota"]
+        resumen["Total_Saldo"] = resumen["Total_Pactado_Cuota"] - resumen["Total_Pagado"]
+
+        # Mostrar resumen
+        st.subheader("Resumen por Caso")
+        st.dataframe(resumen[[
+            "Cliente",
+            "Expediente",
+            "Monto",
+            "Pagado_Honorarios",
+            "Saldo_Honorarios",
+            "Monot_Base",
+            "Cuota_Litis",
+            "Monto_Cuota_Litis",
+            "Pagado_Cuota",
+            "Saldo_Cuota",
+            "Total_Pactado_Cuota",
+            "Total_Pagado",
+            "Total_Saldo",
+            "Contraparte",
+            "Observaciones"
+        ]])
+
+        # Totales generales
+        totales = pd.DataFrame({
+            "Concepto": ["Honorarios","Cuota Litis","Total General"],
+            "Pactado": [resumen["Monto"].sum(), resumen["Monto_Cuota_Litis"].sum(), resumen["Total_Pactado_Cuota"].sum()],
+            "Pagado": [resumen["Pagado_Honorarios"].sum(), resumen["Pagado_Cuota"].sum(), resumen["Total_Pagado"].sum()],
+            "Saldo": [resumen["Saldo_Honorarios"].sum(), resumen["Saldo_Cuota"].sum(), resumen["Total_Saldo"].sum()]
+        })
+        st.subheader("Totales Generales")
+        st.dataframe(totales)
+    else:
+        st.write("No hay casos registrados para mostrar resumen.")
