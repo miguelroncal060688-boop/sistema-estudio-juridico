@@ -33,13 +33,14 @@ def guardar_csv(df, nombre):
 clientes = cargar_csv("clientes.csv")
 casos = cargar_csv("casos.csv")
 pagos = cargar_csv("pagos.csv")
+pagos_litis = cargar_csv("pagos_litis.csv")  # Nueva tabla
 
 # Agregar columna Observaciones si no existe
-for df, col in [(clientes, "Observaciones"), (casos, "Observaciones"), (pagos, "Observaciones")]:
+for df, col in [(clientes, "Observaciones"), (casos, "Observaciones"), (pagos, "Observaciones"), (pagos_litis,"Observaciones")]:
     if col not in df.columns:
         df[col] = ""
 
-menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Cuota Litis"])
+menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Cuota Litis","Pagos Cuota Litis"])
 
 # ===== CLIENTES =====
 if menu == "Clientes":
@@ -234,13 +235,12 @@ if menu == "Cuota Litis":
     st.title("Cuota Litis por Expediente")
     if not casos.empty:
         df_litis = casos.copy()
-        # Calcula cuota litis sobre Monto Base
         df_litis["Monto_Cuota_Litis"] = df_litis["Monot_Base"] * df_litis["Cuota_Litis"]/100
         # Pagos a cuenta de cuota litis
         def pagos_cuota_litis(id_caso):
-            if pagos.empty:
+            if pagos_litis.empty:
                 return 0.0
-            return pagos[pagos["ID_CASO"]==id_caso]["Monto"].sum()
+            return pagos_litis[pagos_litis["ID_CASO"]==id_caso]["Monto"].sum()
         df_litis["Pagado_Cuota"] = df_litis["ID_CASO"].apply(pagos_cuota_litis)
         df_litis["Saldo_Cuota"] = df_litis["Monto_Cuota_Litis"] - df_litis["Pagado_Cuota"]
         st.dataframe(df_litis[[
@@ -256,3 +256,39 @@ if menu == "Cuota Litis":
         ]])
     else:
         st.write("No hay casos registrados.")
+
+# ===== PESTAÑA PAGOS CUOTA LITIS =====
+if menu == "Pagos Cuota Litis":
+    st.title("Registro de Pagos de Cuota Litis")
+    if not casos.empty:
+        with st.form("form_pago_litis"):
+            caso_sel = st.selectbox("Caso", casos["ID_CASO"], key="caso_litis")
+            cliente_sel = st.selectbox("Cliente", clientes["Nombre"], key="cliente_litis")
+            fecha = st.date_input("Fecha")
+            monto_pago = st.number_input("Monto pagado",0.0)
+            observaciones = st.text_area("Observaciones")
+            submitted = st.form_submit_button("Registrar Pago Cuota Litis", key="guardar_pago_litis")
+            if submitted:
+                nuevo = pd.DataFrame([{
+                    "ID_CASO": caso_sel,
+                    "Cliente": cliente_sel,
+                    "Fecha": fecha,
+                    "Monto": monto_pago,
+                    "Observaciones": observaciones
+                }])
+                pagos_litis = pd.concat([pagos_litis,nuevo],ignore_index=True)
+                guardar_csv(pagos_litis,"pagos_litis.csv")
+                st.success("Pago a Cuota Litis registrado")
+                st.experimental_rerun()
+
+        st.subheader("Pagos Cuota Litis registrados")
+        if not pagos_litis.empty:
+            sel_pago_litis = st.selectbox("Selecciona Pago para eliminar", pagos_litis.index, key="sel_pago_litis")
+            p = pagos_litis.loc[sel_pago_litis]
+            st.write(p)
+            if st.button("Eliminar Pago Cuota Litis", key=f"del_pago_litis_{sel_pago_litis}"):
+                pagos_litis.drop(sel_pago_litis,inplace=True)
+                pagos_litis.reset_index(drop=True,inplace=True)
+                guardar_csv(pagos_litis,"pagos_litis.csv")
+                st.success("Pago eliminado")
+                st.experimental_rerun()
