@@ -36,16 +36,9 @@ def export_df_to_excel(df,nombre_archivo):
 # ===============================
 # SESIÓN SEGURA
 # ===============================
-if "usuario" not in st.session_state:
-    st.session_state.usuario = None
-if "rol" not in st.session_state:
-    st.session_state.rol = None
-if "edit_caso" not in st.session_state:
-    st.session_state.edit_caso = None
-if "edit_pago" not in st.session_state:
-    st.session_state.edit_pago = None
-if "login_ok" not in st.session_state:
-    st.session_state.login_ok = False  # flag login
+for key in ["usuario","rol","edit_caso","edit_pago","login_ok"]:
+    if key not in st.session_state:
+        st.session_state[key] = None if key!="login_ok" else False
 
 # ===============================
 # LOGIN
@@ -55,7 +48,9 @@ if not st.session_state.login_ok:
     usuarios_df = cargar_csv(USUARIOS_CSV, ["usuario","contrasena","rol"])
     usuario_input = st.text_input("Usuario")
     contrasena_input = st.text_input("Contraseña", type="password")
-    if st.button("Ingresar"):
+    login_pressed = st.button("Ingresar")
+    
+    if login_pressed:
         user = usuarios_df[(usuarios_df["usuario"]==usuario_input) & (usuarios_df["contrasena"]==contrasena_input)]
         if not user.empty:
             st.session_state.usuario = usuario_input
@@ -100,8 +95,8 @@ if st.session_state.login_ok:
 
         if not clientes_df.empty:
             st.subheader("Lista de Clientes")
-            export_df_to_excel(clientes_df,"clientes.xlsx")
             st.dataframe(clientes_df)
+            st.download_button("Exportar Clientes a Excel", clientes_df.to_excel(index=False), file_name="clientes.xlsx")
 
     # ===============================
     # CASOS
@@ -154,6 +149,7 @@ if st.session_state.login_ok:
                     casos_df = pd.concat([casos_df,pd.DataFrame([[nuevo_id,cliente_id,numero_expediente,anio,materia,pretension,abogado,etapa_procesal,contraparte,monto_pactado,cuota_litis,porcentaje,base_cuota,observaciones]],columns=casos_df.columns)],ignore_index=True)
                     guardar_csv(casos_df,CASOS_CSV)
                     registrar_historial(st.session_state.usuario,f"Registró caso {numero_expediente}-{anio}")
+                    st.success("Caso registrado")
                     st.experimental_rerun()
 # ===============================
 # PAGOS
