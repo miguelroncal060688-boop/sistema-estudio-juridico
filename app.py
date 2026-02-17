@@ -20,7 +20,7 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS usuarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     usuario TEXT UNIQUE,
-    contraseña TEXT,
+    contrasena TEXT,
     rol TEXT
 )
 """)
@@ -124,14 +124,15 @@ def export_df_to_excel(df, filename="export.xlsx"):
     st.download_button(label="Descargar Excel", data=output.getvalue(), file_name=filename)
 
 # ===============================
-# LOGIN SIMPLE
+# LOGIN
 # ===============================
 if st.session_state.usuario is None:
     st.sidebar.title("Login")
     usuario_input = st.sidebar.text_input("Usuario")
-    contraseña_input = st.sidebar.text_input("Contraseña", type="password")
+    contrasena_input = st.sidebar.text_input("Contraseña", type="password")
     if st.sidebar.button("Ingresar"):
-        user = pd.read_sql("SELECT * FROM usuarios WHERE usuario=? AND contraseña=?", conn, params=(usuario_input, contraseña_input))
+        query = "SELECT * FROM usuarios WHERE usuario=? AND contrasena=?"
+        user = pd.read_sql_query(query, conn, params=(usuario_input, contrasena_input))
         if not user.empty:
             st.session_state.usuario = usuario_input
             st.session_state.rol = user.iloc[0]["rol"]
@@ -156,7 +157,7 @@ if st.session_state.usuario:
     # ===============================
     if menu=="Clientes":
         st.title("👥 Gestión de Clientes")
-        clientes_df = pd.read_sql("SELECT * FROM clientes", conn)
+        clientes_df = pd.read_sql_query("SELECT * FROM clientes", conn)
         with st.expander("➕ Nuevo Cliente"):
             nombre = st.text_input("Nombre")
             dni = st.text_input("DNI")
@@ -197,8 +198,8 @@ if st.session_state.usuario:
     # ===============================
     elif menu=="Casos":
         st.title("📂 Gestión de Casos")
-        clientes_df = pd.read_sql("SELECT id,nombre FROM clientes",conn)
-        casos_df = pd.read_sql("SELECT * FROM casos",conn)
+        clientes_df = pd.read_sql_query("SELECT id,nombre FROM clientes",conn)
+        casos_df = pd.read_sql_query("SELECT * FROM casos",conn)
         with st.expander("➕ Nuevo Caso"):
             if clientes_df.empty:
                 st.warning("Debe registrar al menos un cliente")
@@ -225,95 +226,3 @@ if st.session_state.usuario:
                     conn.commit()
                     registrar_historial(st.session_state.usuario,f"Registró caso {numero_expediente}-{anio}")
                     st.experimental_rerun()
-        if not casos_df.empty:
-            st.subheader("Lista de Casos")
-            export_df_to_excel(casos_df,"casos.xlsx")
-            for i,row in casos_df.iterrows():
-                cliente_nombre = pd.read_sql(f"SELECT nombre FROM clientes WHERE id={row['cliente_id']}",conn).iloc[0,0]
-                with st.expander(f"{cliente_nombre} - {row['numero_expediente']}-{row['anio']}"):
-                    st.write(f"Materia: {row['materia']} / Abogado: {row['abogado']} / Etapa: {row['etapa_procesal']}")
-                    st.write(f"Contraparte: {row['contraparte']}")
-                    st.write(f"Monto pactado: {row['monto_pactado']} / Cuota Litis: {row['cuota_litis']} ({row['porcentaje']}%) / Base: {row['base_cuota']}")
-                    st.write(f"Observaciones: {row['observaciones']}")
-                    if st.button(f"Editar Caso {row['id']}"):
-                        st.session_state.edit_caso=row['id']
-                        st.experimental_rerun()
-                    if st.button(f"Eliminar Caso {row['id']}"):
-                        cursor.execute("DELETE FROM casos WHERE id=?",(row['id'],))
-                        conn.commit()
-                        st.experimental_rerun()
-
-    # ===============================
-    # PAGOS
-    # ===============================
-    elif menu=="Pagos":
-        st.title("💰 Gestión de Pagos")
-        casos_df = pd.read_sql("SELECT * FROM casos",conn)
-        pagos_df = pd.read_sql("SELECT * FROM pagos",conn)
-        if casos_df.empty:
-            st.warning("No hay casos registrados")
-        else:
-            with st.expander("➕ Nuevo Pago"):
-                casos_df["descripcion"] = casos_df["numero_expediente"].astype(str)+"-"+casos_df["anio"].astype(str)
-                seleccion = st.selectbox("Seleccionar Caso",casos_df["descripcion"])
-                caso_sel = casos_df[casos_df["descripcion"]==seleccion]
-                if not caso_sel.empty:
-                    caso_id = int(caso_sel["id"].values[0])
-                else:
-                    st.error("No se pudo identificar el caso")
-                    caso_id=None
-                fecha = st.date_input("Fecha",value=date.today())
-                tipo = st.selectbox("Tipo",["Honorarios","Cuota Litis"])
-                monto = st.number_input("Monto",min_value=0.0,format="%.2f")
-                observaciones = st.text_area("Observaciones")
-                if st.button("Guardar Pago") and caso_id is not None:
-                    cursor.execute("INSERT INTO pagos (caso_id,fecha,tipo,monto,observaciones) VALUES (?,?,?,?,?)",(caso_id,str(fecha),tipo,monto,observaciones))
-                    conn.commit()
-                    st.success("Pago registrado")
-                    st.experimental_rerun()
-        if not pagos_df.empty:
-            st.subheader("Pagos realizados")
-            pagos_display = pagos_df.copy()
-            pagos_display["caso"] = pagos_display["caso_id"].apply(lambda x: pd.read_sql(f"SELECT numero_expediente,anio FROM casos WHERE id={x}",conn).iloc[0,0]+"-"+str(pd.read_sql(f"SELECT numero_expediente,anio FROM casos WHERE id={x}",conn).iloc[0,1]))
-            pagos_display["cliente"] = pagos_display["caso_id"].apply(lambda x: pd.read_sql(f"SELECT cliente_id FROM casos WHERE id={x}",conn).iloc[0,0])
-            pagos_display["cliente"] = pagos_display["cliente"].apply(lambda x: pd.read_sql(f"SELECT nombre FROM clientes WHERE id={x}",conn).iloc[0,0])
-            export_df_to_excel(pagos_display[["id","cliente","caso","fecha","tipo","monto","observaciones"]],"pagos.xlsx")
-            st.dataframe(pagos_display[["id","cliente","caso","fecha","tipo","monto","observaciones"]])
-            id_elim = st.number_input("ID Pago a eliminar",min_value=1,step=1)
-            if st.button("Eliminar Pago"):
-                cursor.execute("DELETE FROM pagos WHERE id=?",(id_elim,))
-                conn.commit()
-                st.experimental_rerun()
-
-    # ===============================
-    # CONTRATOS
-    # ===============================
-    elif menu=="Contratos":
-        st.title("📝 Generación de Contratos")
-        casos_df = pd.read_sql("SELECT * FROM casos",conn)
-        clientes_df = pd.read_sql("SELECT * FROM clientes",conn)
-        if casos_df.empty:
-            st.warning("No hay casos para generar contrato")
-        else:
-            seleccion = st.selectbox("Seleccionar Caso",casos_df["numero_expediente"].astype(str)+"-"+casos_df["anio"].astype(str))
-            caso = casos_df[casos_df["numero_expediente"].astype(str)+"-"+casos_df["anio"].astype(str)==seleccion]
-            if not caso.empty:
-                caso = caso.iloc[0]
-                cliente = clientes_df[clientes_df["id"]==caso["cliente_id"]].iloc[0]
-                numero_contrato = f"{caso['id']:04d}"
-                contrato_txt = generar_contrato(caso,cliente,numero_contrato)
-                st.text_area("Contrato generado",value=contrato_txt,height=400)
-                if st.button("Guardar Contrato"):
-                    cursor.execute("INSERT INTO contratos (caso_id,numero,fecha,contenido) VALUES (?,?,DATE('now'),?)",(caso["id"],numero_contrato,contrato_txt))
-                    conn.commit()
-                    st.success("Contrato guardado")
-
-    # ===============================
-    # HISTORIAL
-    # ===============================
-    elif menu=="Historial":
-        st.title("📜 Historial de acciones")
-        hist_df = pd.read_sql("SELECT * FROM historial ORDER BY fecha DESC",conn)
-        if not hist_df.empty:
-            st.dataframe(hist_df)
-            export_df_to_excel(hist_df,"historial.xlsx")
