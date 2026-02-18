@@ -1,294 +1,270 @@
 import streamlit as st
 import pandas as pd
-import os
-from datetime import datetime
+from datetime import date
 
-st.set_page_config(page_title="Sistema Jurídico PRO", layout="wide")
+st.set_page_config(page_title="Sistema Estudio Jurídico", layout="wide")
 
-# ===== LOGIN =====
-PASSWORD = "estudio123"
-if "login" not in st.session_state:
-    st.session_state.login = False
+# ===============================
+# INICIALIZACIÓN DE SESSION STATE
+# ===============================
 
-if not st.session_state.login:
-    st.title("Acceso al Sistema Jurídico")
-    pwd = st.text_input("Ingrese contraseña", type="password")
-    if st.button("Ingresar"):
-        if pwd == PASSWORD:
-            st.session_state.login = True
-            st.experimental_rerun()
-        else:
-            st.error("Contraseña incorrecta")
-    st.stop()
+if "clientes" not in st.session_state:
+    st.session_state.clientes = pd.DataFrame(columns=["ID","Nombre","Telefono","Email","Observaciones"])
 
-# ===== FUNCIONES =====
-def cargar_csv(nombre):
-    if os.path.exists(nombre):
-        return pd.read_csv(nombre)
-    return pd.DataFrame()
+if "casos" not in st.session_state:
+    st.session_state.casos = pd.DataFrame(columns=[
+        "ID","Cliente","Expediente","Juzgado","Materia","Estado",
+        "Contraparte","Fecha_Inicio",
+        "Monto_Honorarios","Monto_Base","Porcentaje_Litis",
+        "Observaciones"
+    ])
 
-def guardar_csv(df, nombre):
-    df.to_csv(nombre, index=False)
+if "pagos" not in st.session_state:
+    st.session_state.pagos = pd.DataFrame(columns=["ID","ID_CASO","Fecha","Monto","Observaciones"])
 
-clientes = cargar_csv("clientes.csv")
-casos = cargar_csv("casos.csv")
-pagos = cargar_csv("pagos.csv")
-pagos_litis = cargar_csv("pagos_litis.csv")  # Nueva tabla
+if "pagos_litis" not in st.session_state:
+    st.session_state.pagos_litis = pd.DataFrame(columns=["ID","ID_CASO","Fecha","Monto","Observaciones"])
 
-# Agregar columna Observaciones si no existe
-for df, col in [(clientes, "Observaciones"), (casos, "Observaciones"), (pagos, "Observaciones"), (pagos_litis,"Observaciones")]:
-    if col not in df.columns:
-        df[col] = ""
 
-menu = st.sidebar.selectbox("Menú", ["Dashboard","Clientes","Casos","Pagos","Cuota Litis","Pagos Cuota Litis"])
+# ===============================
+# MENÚ
+# ===============================
 
-# ===== CLIENTES =====
+menu = st.sidebar.radio("Menú", [
+    "Clientes",
+    "Casos",
+    "Pagos Honorarios",
+    "Cuota Litis",
+    "Pagos Cuota Litis",
+    "Dashboard",
+    "Resumen Financiero"
+])
+
+
+# ===============================
+# CLIENTES
+# ===============================
+
 if menu == "Clientes":
-    st.title("Gestión de Clientes")
+    st.title("Clientes")
 
     with st.form("form_cliente"):
-        nombre = st.text_input("Nombre completo")
-        dni = st.text_input("DNI")
-        celular = st.text_input("Celular")
-        correo = st.text_input("Correo")
-        direccion = st.text_input("Dirección")
-        observaciones = st.text_area("Observaciones")
-        submitted = st.form_submit_button("Guardar Cliente", key="guardar_cliente")
-        if submitted:
-            nuevo = pd.DataFrame([{
-                "Nombre": nombre,
-                "DNI": dni,
-                "Celular": celular,
-                "Correo": correo,
-                "Dirección": direccion,
-                "Observaciones": observaciones
-            }])
-            clientes = pd.concat([clientes, nuevo], ignore_index=True)
-            guardar_csv(clientes,"clientes.csv")
-            st.success("Cliente agregado")
-            st.experimental_rerun()
+        nombre = st.text_input("Nombre")
+        telefono = st.text_input("Teléfono")
+        email = st.text_input("Email")
+        obs = st.text_area("Observaciones")
+        guardar = st.form_submit_button("Guardar")
 
-    st.subheader("Clientes registrados")
-    if not clientes.empty:
-        sel_cliente = st.selectbox("Selecciona Cliente para Editar/Eliminar", clientes["Nombre"], key="sel_cliente")
-        idx = clientes[clientes["Nombre"]==sel_cliente].index[0]
-        st.write(clientes.loc[idx])
-        col1,col2 = st.columns(2)
-        if col1.button("Editar Cliente", key=f"edit_cliente_{idx}"):
-            with st.form(f"edit_cliente_form_{idx}"):
-                nombre_e = st.text_input("Nombre completo", clientes.loc[idx,"Nombre"])
-                dni_e = st.text_input("DNI", clientes.loc[idx,"DNI"])
-                celular_e = st.text_input("Celular", clientes.loc[idx,"Celular"])
-                correo_e = st.text_input("Correo", clientes.loc[idx,"Correo"])
-                direccion_e = st.text_input("Dirección", clientes.loc[idx,"Dirección"])
-                observaciones_e = st.text_area("Observaciones", clientes.loc[idx,"Observaciones"])
-                submit_edit = st.form_submit_button("Guardar Cambios", key=f"submit_edit_cliente_{idx}")
-                if submit_edit:
-                    clientes.loc[idx] = [nombre_e,dni_e,celular_e,correo_e,direccion_e,observaciones_e]
-                    guardar_csv(clientes,"clientes.csv")
-                    st.success("Cliente actualizado")
-                    st.experimental_rerun()
-        if col2.button("Eliminar Cliente", key=f"del_cliente_{idx}"):
-            clientes.drop(idx, inplace=True)
-            clientes.reset_index(drop=True,inplace=True)
-            guardar_csv(clientes,"clientes.csv")
-            st.success("Cliente eliminado")
-            st.experimental_rerun()
+        if guardar and nombre:
+            new_id = len(st.session_state.clientes) + 1
+            st.session_state.clientes.loc[len(st.session_state.clientes)] = [
+                new_id,nombre,telefono,email,obs
+            ]
+            st.success("Cliente guardado correctamente")
 
-# ===== CASOS =====
+    st.dataframe(st.session_state.clientes)
+
+
+# ===============================
+# CASOS / EXPEDIENTES
+# ===============================
+
 if menu == "Casos":
-    st.title("Gestión de Casos")
+    st.title("Expedientes")
 
-    with st.form("form_caso"):
-        cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [], key="cliente_nuevo")
-        expediente = st.text_input("Número de expediente")
-        año = st.text_input("Año")
-        materia = st.text_input("Materia")
-        monto = st.number_input("Monto pactado", 0.0)
-        cuota_litis = st.number_input("Cuota Litis (%)",0.0)
-        monot_base = st.number_input("Monto Base",0.0)
-        contraparte = st.text_input("Contraparte")
-        observaciones = st.text_area("Observaciones")
-        submitted = st.form_submit_button("Guardar Caso", key="guardar_caso")
-        if submitted:
-            identificador = f"{expediente}-{año}-{cliente}"
-            nuevo = pd.DataFrame([{
-                "ID_CASO": identificador,
-                "Cliente": cliente,
-                "Expediente": expediente,
-                "Año": año,
-                "Materia": materia,
-                "Monto": monto,
-                "Cuota_Litis": cuota_litis,
-                "Monot_Base": monot_base,
-                "Contraparte": contraparte,
-                "Observaciones": observaciones
-            }])
-            casos = pd.concat([casos,nuevo],ignore_index=True)
-            guardar_csv(casos,"casos.csv")
-            st.success("Caso agregado")
-            st.experimental_rerun()
+    if not st.session_state.clientes.empty:
 
-    st.subheader("Casos registrados")
-    if not casos.empty:
-        sel_caso = st.selectbox("Selecciona Caso para Editar/Eliminar", casos["ID_CASO"], key="sel_caso")
-        idx = casos[casos["ID_CASO"]==sel_caso].index[0]
-        st.write(casos.loc[idx])
-        col1,col2 = st.columns(2)
-        if col1.button("Editar Caso", key=f"edit_caso_{idx}"):
-            with st.form(f"edit_caso_form_{idx}"):
-                expediente_e = st.text_input("Número de expediente", casos.loc[idx,"Expediente"])
-                año_e = st.text_input("Año", casos.loc[idx,"Año"])
-                cliente_e = st.selectbox("Cliente", clientes["Nombre"], index=clientes[clientes["Nombre"]==casos.loc[idx,"Cliente"]].index[0], key=f"cliente_edit_{idx}")
-                materia_e = st.text_input("Materia", casos.loc[idx,"Materia"])
-                monto_e = st.number_input("Monto pactado", casos.loc[idx,"Monto"])
-                cuota_litis_e = st.number_input("Cuota Litis (%)", casos.loc[idx,"Cuota_Litis"])
-                monot_base_e = st.number_input("Monto Base", casos.loc[idx,"Monot_Base"])
-                contraparte_e = st.text_input("Contraparte", casos.loc[idx,"Contraparte"])
-                observaciones_e = st.text_area("Observaciones", casos.loc[idx,"Observaciones"])
-                submit_edit = st.form_submit_button("Guardar Cambios", key=f"submit_edit_caso_{idx}")
-                if submit_edit:
-                    casos.loc[idx] = [f"{expediente_e}-{año_e}-{cliente_e}", cliente_e, expediente_e, año_e, materia_e, monto_e, cuota_litis_e, monot_base_e, contraparte_e, observaciones_e]
-                    guardar_csv(casos,"casos.csv")
-                    st.success("Caso actualizado")
-                    st.experimental_rerun()
-        if col2.button("Eliminar Caso", key=f"del_caso_{idx}"):
-            casos.drop(idx,inplace=True)
-            casos.reset_index(drop=True,inplace=True)
-            guardar_csv(casos,"casos.csv")
-            st.success("Caso eliminado")
-            st.experimental_rerun()
+        with st.form("form_caso"):
+            cliente = st.selectbox("Cliente", st.session_state.clientes["Nombre"])
+            expediente = st.text_input("Número de Expediente")
+            juzgado = st.text_input("Juzgado")
+            materia = st.text_input("Materia")
+            estado = st.text_input("Estado del proceso")
+            contraparte = st.text_input("Contraparte")
+            fecha_inicio = st.date_input("Fecha de inicio", value=date.today())
+            monto_honorarios = st.number_input("Monto Pactado Honorarios", min_value=0.0)
+            monto_base = st.number_input("Monto Base (Cuota Litis)", min_value=0.0)
+            porcentaje = st.number_input("Porcentaje Cuota Litis (%)", min_value=0.0)
+            obs = st.text_area("Observaciones")
 
-# ===== PAGOS =====
-if menu == "Pagos":
-    st.title("Registro de Pagos")
+            guardar = st.form_submit_button("Guardar Caso")
 
-    if not clientes.empty and not casos.empty:
+            if guardar and expediente:
+                new_id = len(st.session_state.casos) + 1
+                st.session_state.casos.loc[len(st.session_state.casos)] = [
+                    new_id,cliente,expediente,juzgado,materia,estado,
+                    contraparte,fecha_inicio,
+                    monto_honorarios,monto_base,porcentaje,
+                    obs
+                ]
+                st.success("Caso guardado correctamente")
+
+        st.dataframe(st.session_state.casos)
+
+    else:
+        st.warning("Primero debes registrar un cliente")
+
+
+# ===============================
+# PAGOS HONORARIOS
+# ===============================
+
+if menu == "Pagos Honorarios":
+    st.title("Pagos de Honorarios")
+
+    if not st.session_state.casos.empty:
+
         with st.form("form_pago"):
-            caso_sel = st.selectbox("Caso", casos["ID_CASO"], key="caso_pago")
-            cliente_sel = st.selectbox("Cliente", clientes["Nombre"], key="cliente_pago")
-            fecha = st.date_input("Fecha")
-            monto_pago = st.number_input("Monto pagado",0.0)
-            observaciones = st.text_area("Observaciones")
-            submitted = st.form_submit_button("Registrar Pago", key="guardar_pago")
-            if submitted:
-                nuevo = pd.DataFrame([{
-                    "ID_CASO": caso_sel,
-                    "Cliente": cliente_sel,
-                    "Fecha": fecha,
-                    "Monto": monto_pago,
-                    "Observaciones": observaciones
-                }])
-                pagos = pd.concat([pagos,nuevo],ignore_index=True)
-                guardar_csv(pagos,"pagos.csv")
-                st.success("Pago registrado")
-                st.experimental_rerun()
+            caso = st.selectbox(
+                "Expediente",
+                st.session_state.casos["Expediente"]
+            )
+            fecha = st.date_input("Fecha", value=date.today())
+            monto = st.number_input("Monto", min_value=0.0)
+            obs = st.text_area("Observaciones")
 
-    st.subheader("Pagos registrados")
-    if not pagos.empty:
-        sel_pago = st.selectbox("Selecciona Pago para eliminar", pagos.index, key="sel_pago")
-        p = pagos.loc[sel_pago]
-        st.write(p)
-        if st.button("Eliminar Pago", key=f"del_pago_{sel_pago}"):
-            pagos.drop(sel_pago,inplace=True)
-            pagos.reset_index(drop=True,inplace=True)
-            guardar_csv(pagos,"pagos.csv")
-            st.success("Pago eliminado")
-            st.experimental_rerun()
+            guardar = st.form_submit_button("Registrar Pago")
 
-# ===== DASHBOARD =====
-if menu == "Dashboard":
-    st.title("Dashboard Financiero")
-    
-    total_clientes = len(clientes)
-    total_casos = len(casos)
-    total_ingresos = pagos["Monto"].sum() if not pagos.empty else 0
+            if guardar:
+                id_caso = st.session_state.casos[
+                    st.session_state.casos["Expediente"]==caso
+                ]["ID"].values[0]
 
-    if not casos.empty:
-        df_saldo = casos.copy()
-        for col in ["Contraparte","Monto","Observaciones"]:
-            if col not in df_saldo.columns:
-                df_saldo[col] = "" if col=="Contraparte" or col=="Observaciones" else 0.0
-        df_saldo["Pagado"] = df_saldo["ID_CASO"].apply(
-            lambda x: pagos[pagos["ID_CASO"]==x]["Monto"].sum() if not pagos.empty else 0
-        )
-        df_saldo["Saldo"] = df_saldo["Monto"] - df_saldo["Pagado"]
-        total_pendiente = df_saldo["Saldo"].sum()
+                new_id = len(st.session_state.pagos) + 1
+                st.session_state.pagos.loc[len(st.session_state.pagos)] = [
+                    new_id,id_caso,fecha,monto,obs
+                ]
+                st.success("Pago registrado correctamente")
+
+        st.dataframe(st.session_state.pagos)
+
     else:
-        df_saldo = pd.DataFrame(columns=["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo","Observaciones"])
-        total_pendiente = 0
+        st.warning("No hay expedientes registrados")
 
-    col1,col2,col3,col4 = st.columns(4)
-    col1.metric("Clientes", total_clientes)
-    col2.metric("Casos", total_casos)
-    col3.metric("Ingresos", f"S/ {total_ingresos:.2f}")
-    col4.metric("Pendiente", f"S/ {total_pendiente:.2f}")
 
-    st.subheader("Seguimiento de Pagos por Caso")
-    if not df_saldo.empty:
-        st.dataframe(df_saldo[["ID_CASO","Cliente","Contraparte","Monto","Pagado","Saldo","Observaciones"]])
-    else:
-        st.write("No hay casos registrados.")
+# ===============================
+# CUOTA LITIS (VISUALIZACIÓN)
+# ===============================
 
-# ===== PESTAÑA CUOTA LITIS =====
 if menu == "Cuota Litis":
-    st.title("Cuota Litis por Expediente")
-    if not casos.empty:
-        df_litis = casos.copy()
-        df_litis["Monto_Cuota_Litis"] = df_litis["Monot_Base"] * df_litis["Cuota_Litis"]/100
-        # Pagos a cuenta de cuota litis
-        def pagos_cuota_litis(id_caso):
-            if pagos_litis.empty:
-                return 0.0
-            return pagos_litis[pagos_litis["ID_CASO"]==id_caso]["Monto"].sum()
-        df_litis["Pagado_Cuota"] = df_litis["ID_CASO"].apply(pagos_cuota_litis)
-        df_litis["Saldo_Cuota"] = df_litis["Monto_Cuota_Litis"] - df_litis["Pagado_Cuota"]
-        st.dataframe(df_litis[[
-            "Cliente",
-            "Expediente",
-            "Cuota_Litis",
-            "Monot_Base",
-            "Monto_Cuota_Litis",
-            "Pagado_Cuota",
-            "Saldo_Cuota",
-            "Contraparte",
+    st.title("Cuota Litis")
+
+    if not st.session_state.casos.empty:
+
+        df = st.session_state.casos.copy()
+        df["Cuota_Litis_Calculada"] = df["Monto_Base"] * (df["Porcentaje_Litis"]/100)
+
+        st.dataframe(df[[
+            "Cliente","Expediente","Monto_Base",
+            "Porcentaje_Litis","Cuota_Litis_Calculada","Observaciones"
+        ]])
+
+    else:
+        st.warning("No hay expedientes registrados")
+
+
+# ===============================
+# PAGOS CUOTA LITIS
+# ===============================
+
+if menu == "Pagos Cuota Litis":
+    st.title("Pagos Cuota Litis")
+
+    if not st.session_state.casos.empty:
+
+        with st.form("form_pago_litis"):
+            caso = st.selectbox(
+                "Expediente",
+                st.session_state.casos["Expediente"]
+            )
+            fecha = st.date_input("Fecha", value=date.today())
+            monto = st.number_input("Monto", min_value=0.0)
+            obs = st.text_area("Observaciones")
+
+            guardar = st.form_submit_button("Registrar Pago")
+
+            if guardar:
+                id_caso = st.session_state.casos[
+                    st.session_state.casos["Expediente"]==caso
+                ]["ID"].values[0]
+
+                new_id = len(st.session_state.pagos_litis) + 1
+                st.session_state.pagos_litis.loc[len(st.session_state.pagos_litis)] = [
+                    new_id,id_caso,fecha,monto,obs
+                ]
+                st.success("Pago de cuota litis registrado")
+
+        st.dataframe(st.session_state.pagos_litis)
+
+    else:
+        st.warning("No hay expedientes registrados")
+
+
+# ===============================
+# DASHBOARD
+# ===============================
+
+if menu == "Dashboard":
+    st.title("Dashboard General")
+
+    total_honorarios = st.session_state.casos["Monto_Honorarios"].sum()
+    total_base = st.session_state.casos["Monto_Base"].sum()
+
+    df = st.session_state.casos.copy()
+    df["Cuota_Litis_Calculada"] = df["Monto_Base"] * (df["Porcentaje_Litis"]/100)
+    total_litis = df["Cuota_Litis_Calculada"].sum()
+
+    total_pagado = st.session_state.pagos["Monto"].sum()
+    total_pagado_litis = st.session_state.pagos_litis["Monto"].sum()
+
+    col1,col2,col3 = st.columns(3)
+
+    col1.metric("Total Honorarios Pactados", f"${total_honorarios:,.2f}")
+    col2.metric("Total Cuota Litis Calculada", f"${total_litis:,.2f}")
+    col3.metric("Total Pagado (General)", f"${total_pagado + total_pagado_litis:,.2f}")
+
+
+# ===============================
+# RESUMEN FINANCIERO
+# ===============================
+
+if menu == "Resumen Financiero":
+    st.title("Resumen Financiero")
+
+    if not st.session_state.casos.empty:
+
+        df = st.session_state.casos.copy()
+
+        df["Cuota_Litis_Calculada"] = df["Monto_Base"] * (df["Porcentaje_Litis"]/100)
+
+        def pagos_honorarios(id_caso):
+            return st.session_state.pagos[
+                st.session_state.pagos["ID_CASO"]==id_caso
+            ]["Monto"].sum()
+
+        def pagos_litis(id_caso):
+            return st.session_state.pagos_litis[
+                st.session_state.pagos_litis["ID_CASO"]==id_caso
+            ]["Monto"].sum()
+
+        df["Pagado_Honorarios"] = df["ID"].apply(pagos_honorarios)
+        df["Saldo_Honorarios"] = df["Monto_Honorarios"] - df["Pagado_Honorarios"]
+
+        df["Pagado_Litis"] = df["ID"].apply(pagos_litis)
+        df["Saldo_Litis"] = df["Cuota_Litis_Calculada"] - df["Pagado_Litis"]
+
+        df["Total_Pactado"] = df["Monto_Honorarios"] + df["Cuota_Litis_Calculada"]
+        df["Total_Pagado"] = df["Pagado_Honorarios"] + df["Pagado_Litis"]
+        df["Saldo_Total"] = df["Total_Pactado"] - df["Total_Pagado"]
+
+        st.dataframe(df[[
+            "Cliente","Expediente",
+            "Monto_Honorarios","Pagado_Honorarios","Saldo_Honorarios",
+            "Monto_Base","Porcentaje_Litis","Cuota_Litis_Calculada",
+            "Pagado_Litis","Saldo_Litis",
+            "Total_Pactado","Total_Pagado","Saldo_Total",
             "Observaciones"
         ]])
+
     else:
-        st.write("No hay casos registrados.")
-
-# ===== PESTAÑA PAGOS CUOTA LITIS =====
-if menu == "Pagos Cuota Litis":
-    st.title("Registro de Pagos de Cuota Litis")
-    if not casos.empty:
-        with st.form("form_pago_litis"):
-            caso_sel = st.selectbox("Caso", casos["ID_CASO"], key="caso_litis")
-            cliente_sel = st.selectbox("Cliente", clientes["Nombre"], key="cliente_litis")
-            fecha = st.date_input("Fecha")
-            monto_pago = st.number_input("Monto pagado",0.0)
-            observaciones = st.text_area("Observaciones")
-            submitted = st.form_submit_button("Registrar Pago Cuota Litis", key="guardar_pago_litis")
-            if submitted:
-                nuevo = pd.DataFrame([{
-                    "ID_CASO": caso_sel,
-                    "Cliente": cliente_sel,
-                    "Fecha": fecha,
-                    "Monto": monto_pago,
-                    "Observaciones": observaciones
-                }])
-                pagos_litis = pd.concat([pagos_litis,nuevo],ignore_index=True)
-                guardar_csv(pagos_litis,"pagos_litis.csv")
-                st.success("Pago a Cuota Litis registrado")
-                st.experimental_rerun()
-
-        st.subheader("Pagos Cuota Litis registrados")
-        if not pagos_litis.empty:
-            sel_pago_litis = st.selectbox("Selecciona Pago para eliminar", pagos_litis.index, key="sel_pago_litis")
-            p = pagos_litis.loc[sel_pago_litis]
-            st.write(p)
-            if st.button("Eliminar Pago Cuota Litis", key=f"del_pago_litis_{sel_pago_litis}"):
-                pagos_litis.drop(sel_pago_litis,inplace=True)
-                pagos_litis.reset_index(drop=True,inplace=True)
-                guardar_csv(pagos_litis,"pagos_litis.csv")
-                st.success("Pago eliminado")
-                st.experimental_rerun()
+        st.warning("No hay expedientes registrados")
