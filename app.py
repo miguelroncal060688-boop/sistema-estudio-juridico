@@ -1,383 +1,316 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+import os
 
-st.set_page_config(page_title="⚖️ Estudio de Abogados Roncal Liñán y Asociados", layout="wide")
+st.set_page_config(page_title="⚖️ Estudio Jurídico Roncal Liñán y Asociados", layout="wide")
 
-# ===============================
-# INICIALIZACIÓN SESSION STATE
-# ===============================
+# =========================
+# ARCHIVOS
+# =========================
+
+FILES = {
+    "clientes": "clientes.csv",
+    "abogados": "abogados.csv",
+    "casos": "casos.csv",
+    "honorarios": "honorarios.csv",
+    "pagos_honorarios": "pagos_honorarios.csv",
+    "cuota_litis": "cuota_litis.csv",
+    "pagos_litis": "pagos_litis.csv"
+}
+
+# =========================
+# CREAR CSV SI NO EXISTEN
+# =========================
+
+def init_csv():
+    if not os.path.exists(FILES["clientes"]):
+        pd.DataFrame(columns=["ID","Nombre","DNI","Celular","Correo","Direccion","Observaciones"]).to_csv(FILES["clientes"], index=False)
+
+    if not os.path.exists(FILES["abogados"]):
+        pd.DataFrame(columns=["ID","Nombre","DNI","Celular","Correo","Colegiatura","Domicilio Procesal","Casilla Electronica","Casilla Judicial"]).to_csv(FILES["abogados"], index=False)
+
+    if not os.path.exists(FILES["casos"]):
+        pd.DataFrame(columns=["ID","Cliente","Abogado","Expediente","Año","Materia","Pretension","Observaciones"]).to_csv(FILES["casos"], index=False)
+
+    if not os.path.exists(FILES["honorarios"]):
+        pd.DataFrame(columns=["Caso","Monto Pactado"]).to_csv(FILES["honorarios"], index=False)
+
+    if not os.path.exists(FILES["pagos_honorarios"]):
+        pd.DataFrame(columns=["Caso","Monto"]).to_csv(FILES["pagos_honorarios"], index=False)
+
+    if not os.path.exists(FILES["cuota_litis"]):
+        pd.DataFrame(columns=["Caso","Monto Base","Porcentaje"]).to_csv(FILES["cuota_litis"], index=False)
+
+    if not os.path.exists(FILES["pagos_litis"]):
+        pd.DataFrame(columns=["Caso","Monto"]).to_csv(FILES["pagos_litis"], index=False)
+
+init_csv()
+
+# =========================
+# LOGIN
+# =========================
 
 if "usuarios" not in st.session_state:
     st.session_state.usuarios = {
-        "admin": {
-            "password": "admin123",
-            "rol": "admin",
-            "abogado": None,
-            "puede_registrar": True
-        }
+        "admin": {"password": "estudio123", "rol": "admin"}
     }
 
-if "usuario_logueado" not in st.session_state:
-    st.session_state.usuario_logueado = None
+if "usuario" not in st.session_state:
+    st.session_state.usuario = None
 
-if "clientes" not in st.session_state:
-    st.session_state.clientes = pd.DataFrame(columns=["ID","Nombre","Telefono","Email","Observaciones"])
-
-if "abogados" not in st.session_state:
-    st.session_state.abogados = pd.DataFrame(columns=["ID","Nombre"])
-
-if "casos" not in st.session_state:
-    st.session_state.casos = pd.DataFrame(columns=[
-        "ID","Cliente","Abogado","Expediente","Juzgado","Materia","Estado",
-        "Contraparte","Fecha_Inicio",
-        "Monto_Honorarios","Monto_Base","Porcentaje_Litis",
-        "Observaciones"
-    ])
-
-if "pagos" not in st.session_state:
-    st.session_state.pagos = pd.DataFrame(columns=["ID","ID_CASO","Fecha","Monto","Observaciones"])
-
-if "pagos_litis" not in st.session_state:
-    st.session_state.pagos_litis = pd.DataFrame(columns=["ID","ID_CASO","Fecha","Monto","Observaciones"])
-
-
-# ===============================
-# LOGIN
-# ===============================
-
-if st.session_state.usuario_logueado is None:
-
-    st.title("⚖️ Estudio de Abogados Roncal Liñán y Asociados")
+if st.session_state.usuario is None:
+    st.title("⚖️ Estudio Jurídico Roncal Liñán y Asociados")
     st.subheader("Ingreso al Sistema")
 
-    usuario = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
+    user = st.text_input("Usuario")
+    pw = st.text_input("Contraseña", type="password")
 
     if st.button("Ingresar"):
-        if usuario in st.session_state.usuarios:
-            if st.session_state.usuarios[usuario]["password"] == password:
-                st.session_state.usuario_logueado = usuario
-                st.success("Ingreso correcto")
-                st.rerun()
-            else:
-                st.error("Contraseña incorrecta")
+        if user in st.session_state.usuarios and st.session_state.usuarios[user]["password"] == pw:
+            st.session_state.usuario = user
+            st.rerun()
         else:
-            st.error("Usuario no existe")
+            st.error("Credenciales incorrectas")
 
     st.stop()
 
-
-usuario_actual = st.session_state.usuario_logueado
-datos_usuario = st.session_state.usuarios[usuario_actual]
-rol = datos_usuario["rol"]
-puede_registrar = datos_usuario["puede_registrar"]
-
-# ===============================
-# TÍTULO
-# ===============================
-
-st.title("⚖️ Estudio de Abogados Roncal Liñán y Asociados")
-st.write(f"Usuario: {usuario_actual} | Rol: {rol}")
-
-if st.button("Cerrar Sesión"):
-    st.session_state.usuario_logueado = None
+st.sidebar.write(f"Usuario: {st.session_state.usuario}")
+if st.sidebar.button("Cerrar sesión"):
+    st.session_state.usuario = None
     st.rerun()
 
-# ===============================
-# MENÚ SEGÚN ROL
-# ===============================
-
-if rol == "admin":
-    menu = st.sidebar.radio("Menú", [
-        "Panel Usuarios",
-        "Abogados",
-        "Clientes",
-        "Casos",
-        "Pagos Honorarios",
-        "Cuota Litis",
-        "Pagos Cuota Litis",
-        "Dashboard",
-        "Resumen Financiero"
-    ])
-else:
-    menu = st.sidebar.radio("Menú", [
-        "Casos",
-        "Pagos Honorarios",
-        "Dashboard"
-    ])
-
-
-# ===============================
-# PANEL USUARIOS (ADMIN)
-# ===============================
-
-if menu == "Panel Usuarios" and rol == "admin":
-
-    st.header("Gestión de Usuarios")
-
-    with st.form("crear_usuario"):
-        nuevo_usuario = st.text_input("Nuevo Usuario")
-        nueva_password = st.text_input("Contraseña", type="password")
-        abogado_vinculado = st.selectbox("Abogado vinculado", ["Ninguno"] + list(st.session_state.abogados["Nombre"]))
-        crear = st.form_submit_button("Crear Usuario")
-
-        if crear:
-            if nuevo_usuario not in st.session_state.usuarios:
-                st.session_state.usuarios[nuevo_usuario] = {
-                    "password": nueva_password,
-                    "rol": "abogado",
-                    "abogado": None if abogado_vinculado=="Ninguno" else abogado_vinculado,
-                    "puede_registrar": False
-                }
-                st.success("Usuario creado")
-            else:
-                st.error("El usuario ya existe")
-
-    st.subheader("Administrar Usuarios")
-
-    for user, datos in st.session_state.usuarios.items():
-        if user != "admin":
-            st.write(f"Usuario: {user}")
-
-            nueva_pass = st.text_input(f"Nueva contraseña para {user}", type="password", key=f"pass_{user}")
-            if st.button(f"Cambiar contraseña {user}"):
-                st.session_state.usuarios[user]["password"] = nueva_pass
-                st.success("Contraseña actualizada")
-
-            permiso = st.checkbox(
-                f"Permitir registrar información ({user})",
-                value=datos["puede_registrar"],
-                key=f"perm_{user}"
-            )
-            st.session_state.usuarios[user]["puede_registrar"] = permiso
-
-            st.markdown("---")
-
-
-# ===============================
-# ABOGADOS (ADMIN)
-# ===============================
-
-if menu == "Abogados" and rol == "admin":
-
-    st.header("Registro de Abogados")
-
-    with st.form("form_abogado"):
-        nombre = st.text_input("Nombre Abogado")
-        guardar = st.form_submit_button("Guardar")
-
-        if guardar and nombre:
-            new_id = len(st.session_state.abogados) + 1
-            st.session_state.abogados.loc[len(st.session_state.abogados)] = [new_id,nombre]
-            st.success("Abogado registrado")
-
-    st.dataframe(st.session_state.abogados)
-
-
-# ===============================
-# CLIENTES
-# ===============================
-
-if menu == "Clientes" and rol == "admin":
-
-    st.header("Clientes")
-
-    with st.form("form_cliente"):
-        nombre = st.text_input("Nombre")
-        telefono = st.text_input("Teléfono")
-        email = st.text_input("Email")
-        obs = st.text_area("Observaciones")
-        guardar = st.form_submit_button("Guardar")
-
-        if guardar and nombre:
-            new_id = len(st.session_state.clientes) + 1
-            st.session_state.clientes.loc[len(st.session_state.clientes)] = [
-                new_id,nombre,telefono,email,obs
-            ]
-            st.success("Cliente guardado")
-
-    st.dataframe(st.session_state.clientes)
-
-
-# ===============================
-# FILTRO CASOS POR ROL
-# ===============================
-
-def obtener_casos_visibles():
-    if rol == "admin":
-        return st.session_state.casos
-    else:
-        abogado = datos_usuario["abogado"]
-        return st.session_state.casos[st.session_state.casos["Abogado"]==abogado]
-
-
-# ===============================
-# CASOS
-# ===============================
-
-if menu == "Casos":
-
-    st.header("Expedientes")
-
-    casos_visibles = obtener_casos_visibles()
-
-    if rol == "admin" or puede_registrar:
-
-        if not st.session_state.clientes.empty:
-
-            with st.form("form_caso"):
-                cliente = st.selectbox("Cliente", st.session_state.clientes["Nombre"])
-                abogado = st.selectbox("Abogado", st.session_state.abogados["Nombre"])
-                expediente = st.text_input("Número de Expediente")
-                juzgado = st.text_input("Juzgado")
-                materia = st.text_input("Materia")
-                estado = st.text_input("Estado del proceso")
-                contraparte = st.text_input("Contraparte")
-                fecha_inicio = st.date_input("Fecha de inicio", value=date.today())
-                monto_honorarios = st.number_input("Monto Pactado Honorarios", min_value=0.0)
-                monto_base = st.number_input("Monto Base (Cuota Litis)", min_value=0.0)
-                porcentaje = st.number_input("Porcentaje Cuota Litis (%)", min_value=0.0)
-                obs = st.text_area("Observaciones")
-
-                guardar = st.form_submit_button("Guardar Caso")
-
-                if guardar and expediente:
-                    new_id = len(st.session_state.casos) + 1
-                    st.session_state.casos.loc[len(st.session_state.casos)] = [
-                        new_id,cliente,abogado,expediente,juzgado,materia,estado,
-                        contraparte,fecha_inicio,
-                        monto_honorarios,monto_base,porcentaje,
-                        obs
-                    ]
-                    st.success("Caso guardado")
-
-    st.dataframe(casos_visibles)
-
-
-# ===============================
-# PAGOS HONORARIOS
-# ===============================
-
-if menu == "Pagos Honorarios":
-
-    casos_visibles = obtener_casos_visibles()
-
-    if rol == "admin" or puede_registrar:
-
-        if not casos_visibles.empty:
-
-            with st.form("form_pago"):
-                caso = st.selectbox("Expediente", casos_visibles["Expediente"])
-                fecha = st.date_input("Fecha", value=date.today())
-                monto = st.number_input("Monto", min_value=0.0)
-                obs = st.text_area("Observaciones")
-
-                guardar = st.form_submit_button("Registrar Pago")
-
-                if guardar:
-                    id_caso = st.session_state.casos[
-                        st.session_state.casos["Expediente"]==caso
-                    ]["ID"].values[0]
-
-                    new_id = len(st.session_state.pagos) + 1
-                    st.session_state.pagos.loc[len(st.session_state.pagos)] = [
-                        new_id,id_caso,fecha,monto,obs
-                    ]
-                    st.success("Pago registrado")
-
-    st.dataframe(st.session_state.pagos)
-
-
-# ===============================
-# CUOTA LITIS (SOLO ADMIN)
-# ===============================
-
-if menu == "Cuota Litis" and rol == "admin":
-
-    st.header("Cuota Litis")
-
-    df = st.session_state.casos.copy()
-    df["Cuota_Litis_Calculada"] = df["Monto_Base"] * (df["Porcentaje_Litis"]/100)
-
-    st.dataframe(df[[
-        "Cliente","Abogado","Expediente","Monto_Base",
-        "Porcentaje_Litis","Cuota_Litis_Calculada","Observaciones"
-    ]])
-
-
-# ===============================
-# PAGOS CUOTA LITIS (ADMIN)
-# ===============================
-
-if menu == "Pagos Cuota Litis" and rol == "admin":
-
-    if not st.session_state.casos.empty:
-
-        with st.form("form_pago_litis"):
-            caso = st.selectbox("Expediente", st.session_state.casos["Expediente"])
-            fecha = st.date_input("Fecha", value=date.today())
-            monto = st.number_input("Monto", min_value=0.0)
-            obs = st.text_area("Observaciones")
-
-            guardar = st.form_submit_button("Registrar Pago")
-
-            if guardar:
-                id_caso = st.session_state.casos[
-                    st.session_state.casos["Expediente"]==caso
-                ]["ID"].values[0]
-
-                new_id = len(st.session_state.pagos_litis) + 1
-                st.session_state.pagos_litis.loc[len(st.session_state.pagos_litis)] = [
-                    new_id,id_caso,fecha,monto,obs
-                ]
-                st.success("Pago de cuota litis registrado")
-
-    st.dataframe(st.session_state.pagos_litis)
-
-
-# ===============================
+# =========================
+# CARGAR DATA
+# =========================
+
+clientes = pd.read_csv(FILES["clientes"])
+abogados = pd.read_csv(FILES["abogados"])
+casos = pd.read_csv(FILES["casos"])
+honorarios = pd.read_csv(FILES["honorarios"])
+pagos_honorarios = pd.read_csv(FILES["pagos_honorarios"])
+cuota_litis = pd.read_csv(FILES["cuota_litis"])
+pagos_litis = pd.read_csv(FILES["pagos_litis"])
+
+menu = st.sidebar.selectbox("Menú", [
+    "Dashboard",
+    "Clientes",
+    "Abogados",
+    "Casos",
+    "Honorarios",
+    "Pagos Honorarios",
+    "Cuota Litis",
+    "Pagos Cuota Litis",
+    "Resumen Financiero"
+])
+
+# =========================
 # DASHBOARD
-# ===============================
+# =========================
 
 if menu == "Dashboard":
+    st.title("Dashboard General")
 
-    casos_visibles = obtener_casos_visibles()
+    st.metric("Total Clientes", len(clientes))
+    st.metric("Total Casos", len(casos))
+    st.metric("Total Abogados", len(abogados))
 
-    total_honorarios = casos_visibles["Monto_Honorarios"].sum()
+# =========================
+# CLIENTES
+# =========================
 
-    df = casos_visibles.copy()
-    df["Cuota_Litis_Calculada"] = df["Monto_Base"] * (df["Porcentaje_Litis"]/100)
-    total_litis = df["Cuota_Litis_Calculada"].sum()
+if menu == "Clientes":
+    st.title("Clientes")
 
-    total_pagado = st.session_state.pagos["Monto"].sum()
+    with st.form("nuevo_cliente"):
+        nombre = st.text_input("Nombre")
+        dni = st.text_input("DNI")
+        celular = st.text_input("Celular")
+        correo = st.text_input("Correo")
+        direccion = st.text_input("Dirección")
+        obs = st.text_area("Observaciones")
+        submit = st.form_submit_button("Guardar")
 
-    col1,col2,col3 = st.columns(3)
-    col1.metric("Total Honorarios Pactados", f"${total_honorarios:,.2f}")
-    col2.metric("Total Cuota Litis Calculada", f"${total_litis:,.2f}")
-    col3.metric("Total Pagado Honorarios", f"${total_pagado:,.2f}")
+        if submit:
+            new_id = len(clientes) + 1
+            clientes.loc[len(clientes)] = [new_id,nombre,dni,celular,correo,direccion,obs]
+            clientes.to_csv(FILES["clientes"], index=False)
+            st.success("Cliente registrado")
+            st.rerun()
 
+    st.subheader("Listado")
+    st.dataframe(clientes)
 
-# ===============================
-# RESUMEN FINANCIERO (ADMIN)
-# ===============================
+# =========================
+# ABOGADOS
+# =========================
 
-if menu == "Resumen Financiero" and rol == "admin":
+if menu == "Abogados":
+    st.title("Abogados")
 
-    df = st.session_state.casos.copy()
-    df["Cuota_Litis_Calculada"] = df["Monto_Base"] * (df["Porcentaje_Litis"]/100)
+    with st.form("nuevo_abogado"):
+        nombre = st.text_input("Nombre")
+        dni = st.text_input("DNI")
+        celular = st.text_input("Celular")
+        correo = st.text_input("Correo")
+        coleg = st.text_input("Colegiatura")
+        dom = st.text_input("Domicilio Procesal")
+        cas_e = st.text_input("Casilla Electrónica")
+        cas_j = st.text_input("Casilla Judicial")
+        submit = st.form_submit_button("Guardar")
 
-    def pagos_honorarios(id_caso):
-        return st.session_state.pagos[
-            st.session_state.pagos["ID_CASO"]==id_caso
-        ]["Monto"].sum()
+        if submit:
+            new_id = len(abogados) + 1
+            abogados.loc[len(abogados)] = [new_id,nombre,dni,celular,correo,coleg,dom,cas_e,cas_j]
+            abogados.to_csv(FILES["abogados"], index=False)
+            st.success("Abogado registrado")
+            st.rerun()
 
-    def pagos_litis(id_caso):
-        return st.session_state.pagos_litis[
-            st.session_state.pagos_litis["ID_CASO"]==id_caso
-        ]["Monto"].sum()
+    st.subheader("Listado")
+    st.dataframe(abogados)
 
-    df["Pagado_Honorarios"] = df["ID"].apply(pagos_honorarios)
-    df["Pagado_Litis"] = df["ID"].apply(pagos_litis)
+# =========================
+# CASOS
+# =========================
 
-    st.dataframe(df)
+if menu == "Casos":
+    st.title("Casos")
+
+    with st.form("nuevo_caso"):
+        cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [])
+        abogado = st.selectbox("Abogado", abogados["Nombre"] if not abogados.empty else [])
+        expediente = st.text_input("Número de Expediente")
+        año = st.text_input("Año")
+        materia = st.text_input("Materia")
+        pretension = st.text_input("Pretensión")
+        obs = st.text_area("Observaciones")
+        submit = st.form_submit_button("Guardar")
+
+        if submit:
+            new_id = len(casos) + 1
+            casos.loc[len(casos)] = [new_id,cliente,abogado,expediente,año,materia,pretension,obs]
+            casos.to_csv(FILES["casos"], index=False)
+            st.success("Caso registrado")
+            st.rerun()
+
+    st.subheader("Listado")
+    st.dataframe(casos)
+
+# =========================
+# HONORARIOS
+# =========================
+
+if menu == "Honorarios":
+    st.title("Honorarios Pactados")
+
+    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
+    monto = st.number_input("Monto Pactado", min_value=0.0)
+
+    if st.button("Guardar"):
+        honorarios.loc[len(honorarios)] = [caso,monto]
+        honorarios.to_csv(FILES["honorarios"], index=False)
+        st.success("Honorario guardado")
+        st.rerun()
+
+    st.dataframe(honorarios)
+
+# =========================
+# PAGOS HONORARIOS
+# =========================
+
+if menu == "Pagos Honorarios":
+    st.title("Pagos de Honorarios")
+
+    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
+    monto = st.number_input("Monto Pagado", min_value=0.0)
+
+    if st.button("Registrar Pago"):
+        pagos_honorarios.loc[len(pagos_honorarios)] = [caso,monto]
+        pagos_honorarios.to_csv(FILES["pagos_honorarios"], index=False)
+        st.success("Pago registrado")
+        st.rerun()
+
+    st.dataframe(pagos_honorarios)
+
+# =========================
+# CUOTA LITIS
+# =========================
+
+if menu == "Cuota Litis":
+    st.title("Cuota Litis")
+
+    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
+    base = st.number_input("Monto Base", min_value=0.0)
+    porcentaje = st.number_input("Porcentaje (%)", min_value=0.0)
+
+    if st.button("Guardar Cuota Litis"):
+        cuota_litis.loc[len(cuota_litis)] = [caso,base,porcentaje]
+        cuota_litis.to_csv(FILES["cuota_litis"], index=False)
+        st.success("Cuota Litis guardada")
+        st.rerun()
+
+    st.dataframe(cuota_litis)
+
+# =========================
+# PAGOS CUOTA LITIS
+# =========================
+
+if menu == "Pagos Cuota Litis":
+    st.title("Pagos Cuota Litis")
+
+    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
+    monto = st.number_input("Monto Pagado", min_value=0.0)
+
+    if st.button("Registrar Pago Litis"):
+        pagos_litis.loc[len(pagos_litis)] = [caso,monto]
+        pagos_litis.to_csv(FILES["pagos_litis"], index=False)
+        st.success("Pago registrado")
+        st.rerun()
+
+    st.dataframe(pagos_litis)
+
+# =========================
+# RESUMEN FINANCIERO
+# =========================
+
+if menu == "Resumen Financiero":
+    st.title("Resumen Financiero")
+
+    if not casos.empty:
+        resumen = []
+
+        for _, c in casos.iterrows():
+            expediente = c["Expediente"]
+
+            pactado = honorarios[honorarios["Caso"] == expediente]["Monto Pactado"].sum()
+            pagado_h = pagos_honorarios[pagos_honorarios["Caso"] == expediente]["Monto"].sum()
+
+            base = cuota_litis[cuota_litis["Caso"] == expediente]["Monto Base"].sum()
+            porcentaje = cuota_litis[cuota_litis["Caso"] == expediente]["Porcentaje"].sum()
+            calculada = base * porcentaje / 100
+            pagado_l = pagos_litis[pagos_litis["Caso"] == expediente]["Monto"].sum()
+
+            resumen.append([
+                expediente,
+                pactado,
+                pagado_h,
+                pactado - pagado_h,
+                base,
+                porcentaje,
+                calculada,
+                pagado_l,
+                calculada - pagado_l
+            ])
+
+        df_resumen = pd.DataFrame(resumen, columns=[
+            "Expediente",
+            "Honorario Pactado",
+            "Honorario Pagado",
+            "Honorario Pendiente",
+            "Monto Base",
+            "Porcentaje",
+            "Cuota Litis Calculada",
+            "Pagado Litis",
+            "Saldo Litis"
+        ])
+
+        st.dataframe(df_resumen)
