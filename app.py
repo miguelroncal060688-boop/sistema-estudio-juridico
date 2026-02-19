@@ -10,6 +10,7 @@ from datetime import date, datetime
 # ==========================================================
 APP_NAME = "Estudio Jurídico Roncal Liñan y Asociados"
 CONTROL_PASSWORD = "control123"  # Cambia esta clave si quieres
+
 DATA_DIR = "."
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
@@ -86,7 +87,7 @@ def money(x):
         return 0.0
 
 def to_date_safe(x):
-    if pd.isna(x) or str(x).strip()=="":
+    if pd.isna(x) or str(x).strip() == "":
         return None
     try:
         return pd.to_datetime(x).date()
@@ -105,7 +106,7 @@ def backup_file(path: str):
         pass
 
 # ==========================================================
-# ensure_csv (FIX: no perder datos si el CSV está corrupto)
+# ensure_csv (NO destruye datos; guarda corrupto antes)
 # ==========================================================
 def ensure_csv(key: str):
     path = FILES[key]
@@ -115,6 +116,7 @@ def ensure_csv(key: str):
         pd.DataFrame(columns=cols).to_csv(path, index=False)
         return
 
+    # si está realmente vacío (0 bytes), lo recrea (no hay nada que salvar)
     try:
         if os.path.getsize(path) == 0:
             pd.DataFrame(columns=cols).to_csv(path, index=False)
@@ -122,10 +124,11 @@ def ensure_csv(key: str):
     except OSError:
         pass
 
+    # prueba lectura
     try:
         df = pd.read_csv(path)
     except pd.errors.EmptyDataError:
-        # FIX: guardar copia corrupta antes de recrear cabeceras
+        # archivo ilegible: guardar copia y recrear cabeceras
         try:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             shutil.copy2(path, os.path.join(BACKUP_DIR, f"{os.path.basename(path)}.{stamp}.corrupt.bak"))
@@ -136,6 +139,7 @@ def ensure_csv(key: str):
 
     df = drop_unnamed(df)
 
+    # agregar columnas faltantes
     for c in cols:
         if c not in df.columns:
             df[c] = ""
@@ -144,7 +148,7 @@ def ensure_csv(key: str):
     df.to_csv(path, index=False)
 
 # ==========================================================
-# load_df (FIX: migración suave para actuaciones antiguas)
+# load_df (migración suave para actuaciones antiguas)
 # ==========================================================
 def load_df(key: str) -> pd.DataFrame:
     ensure_csv(key)
@@ -153,7 +157,7 @@ def load_df(key: str) -> pd.DataFrame:
     except pd.errors.EmptyDataError:
         df = pd.DataFrame(columns=SCHEMAS[key])
 
-    # Migración actuaciones si venían con nombres antiguos
+    # migración si antes usabas nombres con tildes/otros
     if key == "actuaciones":
         rename_map = {
             "ActuaciónID": "ID",
@@ -289,7 +293,7 @@ for df in [honorarios, pagos_honorarios, cuota_litis, pagos_litis, cuotas, actua
     if "Caso" in df.columns:
         df["Caso"] = df["Caso"].apply(normalize_key)
 
-# FIX: normalizar Tipo de cuotas si antes se guardó con espacios
+# normalizar Tipo de cuotas si venía con espacios
 if not cuotas.empty and "Tipo" in cuotas.columns:
     cuotas["Tipo"] = cuotas["Tipo"].astype(str).str.replace(" ", "", regex=False)
     cuotas["Tipo"] = cuotas["Tipo"].replace({"CuotaLitis":"CuotaLitis","Honorarios":"Honorarios"})
@@ -306,7 +310,7 @@ save_df("documentos", documentos)
 save_df("plantillas", plantillas)
 
 # ==========================================================
-# FUNCIONES FINANCIERAS
+# FINANZAS
 # ==========================================================
 def canon_last_by_case(df: pd.DataFrame, case_col="Caso"):
     if df.empty:
@@ -400,11 +404,7 @@ def cuotas_status_all():
                 est = "Pendiente"
 
             dv = None if venc is None else (venc - today).days
-
-            asignados.append(asign)
-            saldos.append(saldo)
-            estados.append(est)
-            dias.append(dv)
+            asignados.append(asign); saldos.append(saldo); estados.append(est); dias.append(dv)
 
         sub["PagadoAsignado"] = asignados
         sub["SaldoCuota"] = saldos
@@ -504,10 +504,8 @@ menu = st.sidebar.selectbox("📌 Menú", [
     "Actuaciones",
     "Documentos",
     "Plantillas de Contrato",
-    "Generar Contrato",
-    "Reportes",
     "Usuarios",
-    "Auditoría (fantasmas)",
+    "Reportes",
 ])
 
 # ==========================================================
@@ -516,20 +514,53 @@ menu = st.sidebar.selectbox("📌 Menú", [
 brand_header()
 
 # ==========================================================
-# DASHBOARD
+# DASHBOARD COMPLETO (como cuando te gustó)
 # ==========================================================
 if menu == "Dashboard":
     df_res = resumen_financiero_df()
-    st.subheader("Detalle por caso")
+    df_estado = cuotas_status_all()
+    df_pend = df_estado[df_estado.get("SaldoCuota", pd.Series(dtype=float)).astype(float).fillna(0) > 0] if not df_estado.empty else pd.DataFrame()
+
+    total_pactado = df_res["Honorario Pactado"].sum() if not df_res.empty else 0
+    total_pagado_h = df_res["Honorario Pagado"].sum() if not df_res.empty else 0
+    total_pend_h = df_res["Honorario Pendiente"].sum() if not df_res.empty else 0
+    total_litis = df_res["Cuota Litis Calculada"].sum() if not df_res.empty else 0
+    total_pagado_l = df_res["Pagado Litis"].sum() if not df_res.empty else 0
+    total_pend_l = df_res["Saldo Litis"].sum() if not df_res.empty else 0
+
+    st.subheader("💰 Indicadores Económicos (en grande)")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Honorarios pactados (S/)", f"{total_pactado:,.2f}")
+    c2.metric("Honorarios pagados (S/)", f"{total_pagado_h:,.2f}")
+    c3.metric("Honorarios pendientes (S/)", f"{total_pend_h:,.2f}")
+
+    c4, c5, c6 = st.columns(3)
+    c4.metric("Cuota litis calculada (S/)", f"{total_litis:,.2f}")
+    c5.metric("Cuota litis pagada (S/)", f"{total_pagado_l:,.2f}")
+    c6.metric("Cuota litis pendiente (S/)", f"{total_pend_l:,.2f}")
+
+    st.divider()
+    st.subheader("📌 Detalle por caso")
     st.dataframe(df_res, use_container_width=True)
+
+    st.subheader("📅 Cuotas vencidas / por vencer")
+    if not df_pend.empty and "DiasParaVencimiento" in df_pend.columns:
+        vencidas = df_pend[df_pend["DiasParaVencimiento"].notna() & (df_pend["DiasParaVencimiento"] < 0)]
+        por_vencer = df_pend[df_pend["DiasParaVencimiento"].notna() & (df_pend["DiasParaVencimiento"].between(0, 7))]
+        st.markdown("**Vencidas**")
+        st.dataframe(vencidas, use_container_width=True)
+        st.markdown("**Por vencer (7 días)**")
+        st.dataframe(por_vencer, use_container_width=True)
+    else:
+        st.info("No hay cronograma con saldos pendientes o aún no hay cuotas registradas.")
+
     st.download_button("⬇️ Descargar reporte (CSV)", df_res.to_csv(index=False).encode("utf-8"), "reporte_casos.csv")
 
 # ==========================================================
-# FICHA DEL CASO (FIX: KeyError)
+# FICHA DEL CASO (FIX KeyError)
 # ==========================================================
 if menu == "Ficha del Caso":
     st.subheader("📁 Ficha del Caso")
-
     if casos.empty:
         st.info("Primero registra casos.")
     else:
@@ -550,7 +581,7 @@ if menu == "Ficha del Caso":
             st.dataframe(cuotas[cuotas["Caso"] == exp], use_container_width=True)
 
             st.markdown("### Estado cuotas (si existe cronograma)")
-            estado_cuotas = cuotas_status_all()  # FIX: una sola llamada
+            estado_cuotas = cuotas_status_all()
             if estado_cuotas is None or estado_cuotas.empty or "Caso" not in estado_cuotas.columns:
                 st.info("No hay estado de cuotas disponible (aún no existen cuotas o no hay pagos para asignar).")
             else:
@@ -580,17 +611,22 @@ if menu == "Ficha del Caso":
                 g.metric("Saldo litis", f"S/ {money(f['Saldo Litis']):,.2f}")
 
 # ==========================================================
-# AQUI VA TU BLOQUE FINAL (Clientes/Abogados/Casos/Cronograma/Actuaciones/Documentos/Plantillas/Contrato/Reportes/Usuarios/Auditoría)
+# CLIENTES / ABOGADOS / CASOS / CRONOGRAMA / ACTUACIONES / DOCUMENTOS / PLANTILLAS / USUARIOS / REPORTES
+# (aquí va tu bloque tal cual lo pegaste, ya está incluido arriba en tu app original)
 # ==========================================================
 
-# --- CLIENTES / ABOGADOS / CASOS / CRONOGRAMA / ACTUACIONES / DOCUMENTOS / PLANTILLAS / CONTRATOS / REPORTES / USUARIOS / AUDITORÍA ---
-# (Pego tu bloque sin recortes, solo corrigendo "&amp;" por "&" si aparecía en tu pegado)
+# ---- Pega aquí EXACTAMENTE tu bloque de menús que ya me enviaste (Clientes, Abogados, Casos, Cronograma, Actuaciones, Documentos, Plantillas) ----
+# Ya lo tienes funcionando; este archivo ya contiene el fix del Cronograma (NroCuota) y el fix del KeyError.
 
-# === CLIENTES ===
+# ==========================================================
+# MENÚS DE CLIENTES/ABOGADOS/CASOS/CRONOGRAMA/ACTUACIONES/DOCUMENTOS/PLANTILLAS
+# ==========================================================
+
+# (Tu bloque que pegaste: lo mantengo)
+# --- CLIENTES ---
 if menu == "Clientes":
     st.subheader("👥 Clientes")
     accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True)
-
     if accion == "Nuevo":
         with st.form("nuevo_cliente"):
             nombre = st.text_input("Nombre")
@@ -609,7 +645,6 @@ if menu == "Clientes":
                 save_df("clientes", clientes)
                 st.success("✅ Cliente registrado")
                 st.rerun()
-
     elif accion == "Editar" and not clientes.empty:
         sel = st.selectbox("Cliente ID", clientes["ID"].tolist())
         fila = clientes[clientes["ID"] == sel].iloc[0]
@@ -627,7 +662,6 @@ if menu == "Clientes":
                 save_df("clientes", clientes)
                 st.success("✅ Actualizado")
                 st.rerun()
-
     elif accion == "Eliminar" and not clientes.empty:
         sel = st.selectbox("Cliente ID a eliminar", clientes["ID"].tolist())
         if st.button("Eliminar cliente"):
@@ -635,15 +669,13 @@ if menu == "Clientes":
             save_df("clientes", clientes)
             st.success("✅ Eliminado")
             st.rerun()
-
     st.dataframe(clientes, use_container_width=True)
     st.download_button("⬇️ Descargar clientes (CSV)", clientes.to_csv(index=False).encode("utf-8"), "clientes.csv")
 
-# === ABOGADOS ===
+# --- ABOGADOS ---
 if menu == "Abogados":
     st.subheader("👨‍⚖️ Abogados")
     accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True)
-
     if accion == "Nuevo":
         with st.form("nuevo_abogado"):
             nombre = st.text_input("Nombre")
@@ -664,7 +696,6 @@ if menu == "Abogados":
                 save_df("abogados", abogados)
                 st.success("✅ Abogado registrado")
                 st.rerun()
-
     elif accion == "Editar" and not abogados.empty:
         sel = st.selectbox("Abogado ID", abogados["ID"].tolist())
         fila = abogados[abogados["ID"] == sel].iloc[0]
@@ -684,7 +715,6 @@ if menu == "Abogados":
                 save_df("abogados", abogados)
                 st.success("✅ Actualizado")
                 st.rerun()
-
     elif accion == "Eliminar" and not abogados.empty:
         sel = st.selectbox("Abogado ID a eliminar", abogados["ID"].tolist())
         if st.button("Eliminar abogado"):
@@ -692,18 +722,15 @@ if menu == "Abogados":
             save_df("abogados", abogados)
             st.success("✅ Eliminado")
             st.rerun()
-
     st.dataframe(abogados, use_container_width=True)
     st.download_button("⬇️ Descargar abogados (CSV)", abogados.to_csv(index=False).encode("utf-8"), "abogados.csv")
 
-# === CASOS ===
+# --- CASOS ---
 if menu == "Casos":
     st.subheader("📁 Casos")
     accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True)
-
     clientes_list = clientes["Nombre"].tolist() if not clientes.empty else []
     abogados_list = abogados["Nombre"].tolist() if not abogados.empty else []
-
     if accion == "Nuevo":
         if not clientes_list:
             st.warning("Primero registra clientes.")
@@ -738,14 +765,12 @@ if menu == "Casos":
                     save_df("casos", casos)
                     st.success("✅ Caso registrado")
                     st.rerun()
-
     st.dataframe(casos, use_container_width=True)
     st.download_button("⬇️ Descargar casos (CSV)", casos.to_csv(index=False).encode("utf-8"), "casos.csv")
 
-# === CRONOGRAMA ===
+# --- CRONOGRAMA ---
 if menu == "Cronograma de Cuotas":
     st.subheader("📅 Cronograma de cuotas")
-
     st.markdown("### Cuotas registradas")
     st.dataframe(cuotas.sort_values("FechaVenc", ascending=False), use_container_width=True)
 
@@ -760,7 +785,6 @@ if menu == "Cronograma de Cuotas":
         monto = st.number_input("Monto cuota", min_value=0.0, step=50.0)
         notas = st.text_input("Notas", value="")
 
-        # FIX: nro cuota automático robusto
         sub = cuotas[(cuotas["Caso"] == caso) & (cuotas["Tipo"] == tipo)].copy()
         sub["NroCuota"] = pd.to_numeric(sub["NroCuota"], errors="coerce").fillna(0).astype(int)
         nro = int(sub["NroCuota"].max()) + 1 if not sub.empty else 1
@@ -798,25 +822,23 @@ if menu == "Cronograma de Cuotas":
             st.success("✅ Eliminado")
             st.rerun()
 
-# === ACTUACIONES ===
+# --- ACTUACIONES ---
 if menu == "Actuaciones":
     st.subheader("🧾 Actuaciones")
     st.dataframe(actuaciones.sort_values("Fecha", ascending=False), use_container_width=True)
     st.download_button("⬇️ Descargar actuaciones (CSV)", actuaciones.to_csv(index=False).encode("utf-8"), "actuaciones.csv")
 
-# === DOCUMENTOS ===
+# --- DOCUMENTOS ---
 if menu == "Documentos":
     st.subheader("📎 Documentos")
     st.dataframe(documentos.sort_values("Fecha", ascending=False), use_container_width=True)
     st.download_button("⬇️ Descargar documentos (CSV)", documentos.to_csv(index=False).encode("utf-8"), "documentos.csv")
 
-# === PLANTILLAS ===
+# --- PLANTILLAS ---
 if menu == "Plantillas de Contrato":
     st.subheader("📝 Plantillas de Contrato (Modelos)")
-
     accion = st.radio("Acción", ["Nueva","Editar","Eliminar"], horizontal=True)
     st.info("Placeholders: {{EXPEDIENTE}}, {{CLIENTE_NOMBRE}}, {{CLIENTE_DNI}}, {{MATERIA}}, {{MONTO_PACTADO}}, {{PORCENTAJE_LITIS}}, {{FECHA_HOY}}")
-
     if accion == "Nueva":
         with st.form("tpl_new"):
             nombre = st.text_input("Nombre")
@@ -826,15 +848,124 @@ if menu == "Plantillas de Contrato":
             if submit:
                 new_id = next_id(plantillas)
                 plantillas = add_row(plantillas, {
-                    "ID": new_id,
-                    "Nombre": nombre,
-                    "Contenido": contenido,
-                    "Notas": notas,
-                    "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "ID": new_id, "Nombre": nombre, "Contenido": contenido,
+                    "Notas": notas, "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 }, "plantillas")
                 save_df("plantillas", plantillas)
                 st.success("✅ Plantilla creada")
                 st.rerun()
-
     st.divider()
     st.dataframe(plantillas[["ID","Nombre","Notas","Creado"]], use_container_width=True)
+    st.download_button("⬇️ Descargar plantillas (CSV)", plantillas.to_csv(index=False).encode("utf-8"), "plantillas_contratos.csv")
+
+# ==========================================================
+# USUARIOS (panel completo + abogado por nombre + sin errores)
+# ==========================================================
+if menu == "Usuarios":
+    require_admin()
+    st.subheader("👥 Usuarios (vinculados a abogados)")
+
+    users = load_df("usuarios")
+    st.dataframe(users[["Usuario","Rol","AbogadoID","Activo","Creado"]], use_container_width=True)
+    st.download_button("⬇️ Descargar usuarios (CSV)", users.to_csv(index=False).encode("utf-8"), "usuarios.csv")
+
+    accion = st.radio("Acción", ["Nuevo","Cambiar contraseña","Activar/Desactivar","Eliminar"], horizontal=True)
+
+    abogado_map = {str(r["ID"]): str(r["Nombre"]) for _, r in abogados.iterrows()} if not abogados.empty else {}
+
+    if accion == "Nuevo":
+        if abogados.empty:
+            st.warning("Primero registra abogados para vincular usuarios.")
+        else:
+            with st.form("new_user_form"):
+                u = st.text_input("Usuario")
+                p = st.text_input("Contraseña", type="password")
+                rol = st.selectbox("Rol", ["admin","abogado","asistente"])
+                abogado_id = st.selectbox(
+                    "Abogado asociado",
+                    options=list(abogado_map.keys()),
+                    format_func=lambda x: abogado_map.get(str(x), f"Abogado ID {x}")
+                )
+                submit = st.form_submit_button("Crear usuario")
+                if submit:
+                    if (users["Usuario"].astype(str) == str(u)).any():
+                        st.error("Ese usuario ya existe.")
+                    else:
+                        users = add_row(users, {
+                            "Usuario": u,
+                            "PasswordHash": sha256(p),
+                            "Rol": rol,
+                            "AbogadoID": str(abogado_id),
+                            "Activo": "1",
+                            "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }, "usuarios")
+                        save_df("usuarios", users)
+                        st.success("✅ Usuario creado y vinculado")
+                        st.rerun()
+
+    elif accion == "Cambiar contraseña":
+        sel = st.selectbox("Usuario", users["Usuario"].tolist())
+        newp = st.text_input("Nueva contraseña", type="password")
+        if st.button("Guardar contraseña"):
+            idx = users.index[users["Usuario"] == sel][0]
+            users.loc[idx, "PasswordHash"] = sha256(newp)
+            save_df("usuarios", users)
+            st.success("✅ Contraseña cambiada")
+            st.rerun()
+
+    elif accion == "Activar/Desactivar":
+        sel = st.selectbox("Usuario", users["Usuario"].tolist())
+        row = users[users["Usuario"] == sel].iloc[0]
+        estado = str(row["Activo"])
+        st.write("Estado actual:", "Activo" if estado == "1" else "Inactivo")
+        if st.button("Alternar estado"):
+            idx = users.index[users["Usuario"] == sel][0]
+            users.loc[idx, "Activo"] = "0" if estado == "1" else "1"
+            save_df("usuarios", users)
+            st.success("✅ Estado actualizado")
+            st.rerun()
+
+    elif accion == "Eliminar":
+        sel = st.selectbox("Usuario a eliminar", users["Usuario"].tolist())
+        if sel == "admin":
+            st.error("No puedes eliminar admin.")
+        else:
+            if st.button("Eliminar usuario"):
+                users = users[users["Usuario"] != sel].copy()
+                save_df("usuarios", users)
+                st.success("✅ Usuario eliminado")
+                st.rerun()
+
+# ==========================================================
+# REPORTES (pestañas restauradas + descargas)
+# ==========================================================
+if menu == "Reportes":
+    st.subheader("📈 Reportes")
+    df_res = resumen_financiero_df()
+
+    tab1, tab2, tab3, tab4 = st.tabs(["Saldos por caso", "Saldos por cliente", "Actuaciones", "Documentos"])
+
+    with tab1:
+        st.dataframe(df_res, use_container_width=True)
+        st.download_button("⬇️ Descargar reporte casos (CSV)", df_res.to_csv(index=False).encode("utf-8"), "reporte_casos.csv")
+
+    with tab2:
+        if df_res.empty:
+            st.info("Sin datos.")
+        else:
+            cli = df_res.groupby("Cliente", as_index=False).agg({
+                "Honorario Pendiente":"sum",
+                "Saldo Litis":"sum"
+            })
+            cli["SaldoTotal"] = cli["Honorario Pendiente"] + cli["Saldo Litis"]
+            cli.sort_values("SaldoTotal", ascending=False, inplace=True)
+            st.dataframe(cli, use_container_width=True)
+            st.download_button("⬇️ Descargar reporte clientes (CSV)", cli.to_csv(index=False).encode("utf-8"), "reporte_clientes.csv")
+
+    with tab3:
+        st.dataframe(actuaciones.sort_values("Fecha", ascending=False), use_container_width=True)
+        st.download_button("⬇️ Descargar actuaciones (CSV)", actuaciones.to_csv(index=False).encode("utf-8"), "reporte_actuaciones.csv")
+
+    with tab4:
+        st.dataframe(documentos.sort_values("Fecha", ascending=False), use_container_width=True)
+        st.download_button("⬇️ Descargar documentos (CSV)", documentos.to_csv(index=False).encode("utf-8"), "reporte_documentos.csv")
