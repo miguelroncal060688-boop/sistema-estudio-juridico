@@ -3,7 +3,9 @@ import pandas as pd
 import os
 from datetime import date
 
-st.set_page_config(page_title="⚖️ Estudio Jurídico Roncal Liñán y Asociados", layout="wide")
+st.set_page_config(page_title="Estudio Jurídico Roncal Liñán y Asociados", layout="wide")
+
+st.title("⚖️ ESTUDIO JURÍDICO RONCAL LIÑÁN Y ASOCIADOS")
 
 # ==============================
 # ARCHIVOS
@@ -27,9 +29,9 @@ FILES = {
 
 def init_csv():
     estructura = {
-        "clientes": ["ID","Nombre","DNI","Celular","Correo","Direccion","Observaciones"],
-        "abogados": ["ID","Nombre","DNI","Celular","Correo","Colegiatura","Domicilio Procesal","Casilla Electronica","Casilla Judicial"],
-        "casos": ["ID","Cliente","Abogado","Expediente","Año","Materia","Pretension","Observaciones"],
+        "clientes": ["ID","Nombre"],
+        "abogados": ["ID","Nombre"],
+        "casos": ["ID","Cliente","Abogado","Expediente","Año"],
         "honorarios": ["ID","CasoID","Monto Pactado"],
         "pagos_honorarios": ["ID","CasoID","Monto"],
         "cuota_litis": ["ID","CasoID","Monto Base","Porcentaje"],
@@ -44,12 +46,12 @@ def init_csv():
 
 init_csv()
 
-# ==============================
-# CARGA DATA
-# ==============================
-
 def load(name):
-    return pd.read_csv(FILES[name])
+    df = pd.read_csv(FILES[name])
+    if "ID" in df.columns:
+        df = df[df["ID"] != 0]
+        df["ID"] = df["ID"].astype(int)
+    return df
 
 def save(name, df):
     df.to_csv(FILES[name], index=False)
@@ -65,12 +67,13 @@ cronograma = load("cronograma")
 usuarios = load("usuarios")
 
 # ==============================
-# CREAR ADMIN SI NO EXISTE
+# ADMIN POR DEFECTO
 # ==============================
 
 if usuarios.empty:
     usuarios.loc[0] = [1,"admin","estudio123","admin",""]
     save("usuarios", usuarios)
+    usuarios = load("usuarios")
 
 # ==============================
 # LOGIN
@@ -82,10 +85,9 @@ if "user" not in st.session_state:
     st.session_state.abogado = None
 
 if st.session_state.user is None:
-    st.title("⚖️ Sistema Jurídico")
+    st.subheader("Ingreso al Sistema")
     u = st.text_input("Usuario")
     p = st.text_input("Contraseña", type="password")
-
     if st.button("Ingresar"):
         fila = usuarios[(usuarios.Usuario==u)&(usuarios.Password==p)]
         if not fila.empty:
@@ -95,12 +97,7 @@ if st.session_state.user is None:
             st.rerun()
         else:
             st.error("Credenciales incorrectas")
-
     st.stop()
-
-# ==============================
-# SIDEBAR
-# ==============================
 
 st.sidebar.write(f"Usuario: {st.session_state.user}")
 st.sidebar.write(f"Rol: {st.session_state.rol}")
@@ -109,40 +106,30 @@ if st.sidebar.button("Cerrar sesión"):
     st.session_state.clear()
     st.rerun()
 
-if st.session_state.rol == "admin":
-    menu = st.sidebar.selectbox("Menú", [
-        "Dashboard","Clientes","Abogados","Casos",
-        "Honorarios","Pagos Honorarios",
-        "Cuota Litis","Pagos Cuota Litis",
-        "Cronograma","Pendientes",
-        "Resumen Financiero","Usuarios"
-    ])
-else:
-    menu = st.sidebar.selectbox("Menú", [
-        "Dashboard","Casos","Honorarios",
-        "Pagos Honorarios","Cronograma","Pendientes"
-    ])
+menu = st.sidebar.selectbox("Menú", [
+    "Dashboard","Clientes","Abogados","Casos",
+    "Honorarios","Pagos Honorarios",
+    "Cuota Litis","Pagos Cuota Litis",
+    "Pendientes","Resumen Financiero","Reporte por Cliente"
+])
 
 # ==============================
-# FILTRO ABOGADO
+# FUNCION ELIMINAR
 # ==============================
 
-if st.session_state.rol == "abogado":
-    casos = casos[casos["Abogado"] == st.session_state.abogado]
+def eliminar_registro(df, nombre):
+    if df.empty:
+        st.info("No hay registros.")
+        return df
 
-# ==============================
-# FUNCION TABLA CON ELIMINAR
-# ==============================
-
-def tabla_editable(df, nombre):
-    st.dataframe(df)
-    if not df.empty:
-        eliminar = st.number_input(f"ID a eliminar ({nombre})", min_value=1, step=1)
-        if st.button(f"Eliminar {nombre}"):
-            df = df[df.ID != eliminar]
-            save(nombre, df)
-            st.success("Eliminado")
-            st.rerun()
+    st.dataframe(df, use_container_width=True)
+    id_sel = st.selectbox("Seleccionar ID a eliminar", df["ID"])
+    if st.button("Eliminar"):
+        df = df[df["ID"] != id_sel]
+        save(nombre, df)
+        st.success("Eliminado correctamente")
+        st.rerun()
+    return df
 
 # ==============================
 # DASHBOARD
@@ -150,185 +137,182 @@ def tabla_editable(df, nombre):
 
 if menu == "Dashboard":
 
-    total_honorarios = honorarios["Monto Pactado"].sum() if not honorarios.empty else 0
+    total_pactado = honorarios["Monto Pactado"].sum() if not honorarios.empty else 0
     total_pagado = pagos_honorarios["Monto"].sum() if not pagos_honorarios.empty else 0
-    pendiente = total_honorarios - total_pagado
+    pendiente = total_pactado - total_pagado
 
     col1,col2,col3 = st.columns(3)
-    col1.metric("💰 Total Pactado", f"S/ {total_honorarios:,.2f}")
-    col2.metric("💵 Total Cobrado", f"S/ {total_pagado:,.2f}")
-    col3.metric("⏳ Pendiente", f"S/ {pendiente:,.2f}")
+    col1.metric("Total Pactado", f"S/ {total_pactado:,.2f}")
+    col2.metric("Total Cobrado", f"S/ {total_pagado:,.2f}")
+    col3.metric("Pendiente", f"S/ {pendiente:,.2f}")
 
 # ==============================
 # CLIENTES
 # ==============================
 
-if menu == "Clientes" and st.session_state.rol=="admin":
-    st.title("Clientes")
-    nombre = st.text_input("Nombre")
+if menu == "Clientes":
+    nombre = st.text_input("Nombre Cliente")
     if st.button("Guardar Cliente"):
-        nuevo = len(clientes)+1
-        clientes.loc[len(clientes)] = [nuevo,nombre,"","","","",""]
+        nuevo = clientes["ID"].max()+1 if not clientes.empty else 1
+        clientes.loc[len(clientes)] = [nuevo,nombre]
         save("clientes", clientes)
         st.rerun()
-    tabla_editable(clientes,"clientes")
+    clientes = eliminar_registro(clientes,"clientes")
 
 # ==============================
 # ABOGADOS
 # ==============================
 
-if menu == "Abogados" and st.session_state.rol=="admin":
-    st.title("Abogados")
+if menu == "Abogados":
     nombre = st.text_input("Nombre Abogado")
     if st.button("Guardar Abogado"):
-        nuevo = len(abogados)+1
-        abogados.loc[len(abogados)] = [nuevo,nombre,"","","","","",""]
+        nuevo = abogados["ID"].max()+1 if not abogados.empty else 1
+        abogados.loc[len(abogados)] = [nuevo,nombre]
         save("abogados", abogados)
         st.rerun()
-    tabla_editable(abogados,"abogados")
+    abogados = eliminar_registro(abogados,"abogados")
 
 # ==============================
 # CASOS
 # ==============================
 
 if menu == "Casos":
-    st.title("Casos")
-
-    lista_clientes = clientes["Nombre"].tolist()
-    lista_abogados = abogados["Nombre"].tolist()
-
-    cliente = st.selectbox("Cliente", lista_clientes)
-    abogado = st.selectbox("Abogado", lista_abogados)
+    cliente = st.selectbox("Cliente", clientes["Nombre"])
+    abogado = st.selectbox("Abogado", abogados["Nombre"])
     expediente = st.text_input("Expediente")
     año = st.text_input("Año")
 
     if st.button("Guardar Caso"):
-        nuevo = len(casos)+1
-        casos.loc[len(casos)] = [nuevo,cliente,abogado,expediente,año,"","",""]
+        nuevo = casos["ID"].max()+1 if not casos.empty else 1
+        casos.loc[len(casos)] = [nuevo,cliente,abogado,expediente,año]
         save("casos", casos)
         st.rerun()
 
-    tabla_editable(casos,"casos")
+    casos = eliminar_registro(casos,"casos")
 
 # ==============================
-# HONORARIOS
+# HONORARIOS + CRONOGRAMA
 # ==============================
 
 if menu == "Honorarios":
-    st.title("Honorarios")
 
-    for _,c in casos.iterrows():
-        st.write(f"ID {c.ID} | Exp: {c.Expediente} | Año: {c.Año} | Cliente: {c.Cliente}")
+    casos_merge = casos.copy()
+    casos_merge["Descripcion"] = (
+        casos_merge["ID"].astype(str) + " | " +
+        casos_merge["Cliente"] + " | Exp: " +
+        casos_merge["Expediente"] + " | Año: " +
+        casos_merge["Año"]
+    )
 
-    caso = st.number_input("ID Caso", min_value=1, step=1)
+    caso_sel = st.selectbox("Seleccionar Caso", casos_merge["Descripcion"])
+    caso_id = casos_merge[casos_merge["Descripcion"]==caso_sel]["ID"].values[0]
+
     monto = st.number_input("Monto Pactado", min_value=0.0)
 
     if st.button("Registrar Honorario"):
-        nuevo = len(honorarios)+1
-        honorarios.loc[len(honorarios)] = [nuevo,caso,monto]
+        nuevo = honorarios["ID"].max()+1 if not honorarios.empty else 1
+        honorarios.loc[len(honorarios)] = [nuevo,caso_id,monto]
         save("honorarios", honorarios)
         st.rerun()
 
-    tabla_editable(honorarios,"honorarios")
+    st.subheader("Cronograma")
+    fecha = st.date_input("Fecha")
+    monto_crono = st.number_input("Monto Cuota", min_value=0.0)
+    estado = st.selectbox("Estado",["Pendiente","Pagado"])
+
+    if st.button("Agregar Cuota"):
+        nuevo = cronograma["ID"].max()+1 if not cronograma.empty else 1
+        cronograma.loc[len(cronograma)] = [nuevo,caso_id,fecha,monto_crono,estado]
+        save("cronograma", cronograma)
+        st.rerun()
+
+    honorarios = eliminar_registro(honorarios,"honorarios")
+
+# ==============================
+# PAGOS HONORARIOS
+# ==============================
+
+if menu == "Pagos Honorarios":
+    caso = st.selectbox("Caso", casos["ID"])
+    monto = st.number_input("Monto Pagado", min_value=0.0)
+    if st.button("Registrar Pago"):
+        nuevo = pagos_honorarios["ID"].max()+1 if not pagos_honorarios.empty else 1
+        pagos_honorarios.loc[len(pagos_honorarios)] = [nuevo,caso,monto]
+        save("pagos_honorarios", pagos_honorarios)
+        st.rerun()
+    pagos_honorarios = eliminar_registro(pagos_honorarios,"pagos_honorarios")
 
 # ==============================
 # CUOTA LITIS
 # ==============================
 
-if menu == "Cuota Litis" and st.session_state.rol=="admin":
-    st.title("Cuota Litis")
-
-    caso = st.number_input("ID Caso", min_value=1)
+if menu == "Cuota Litis":
+    caso = st.selectbox("Caso", casos["ID"])
     base = st.number_input("Monto Base", min_value=0.0)
     porc = st.number_input("Porcentaje", min_value=0.0)
-
-    if st.button("Guardar Cuota"):
-        nuevo = len(cuota_litis)+1
+    if st.button("Guardar Cuota Litis"):
+        nuevo = cuota_litis["ID"].max()+1 if not cuota_litis.empty else 1
         cuota_litis.loc[len(cuota_litis)] = [nuevo,caso,base,porc]
         save("cuota_litis", cuota_litis)
         st.rerun()
-
-    tabla_editable(cuota_litis,"cuota_litis")
+    cuota_litis = eliminar_registro(cuota_litis,"cuota_litis")
 
 # ==============================
 # PAGOS CUOTA LITIS
 # ==============================
 
-if menu == "Pagos Cuota Litis" and st.session_state.rol=="admin":
-    st.title("Pagos Cuota Litis")
-
-    caso = st.number_input("ID Caso", min_value=1)
-    monto = st.number_input("Monto Pago", min_value=0.0)
-
+if menu == "Pagos Cuota Litis":
+    caso = st.selectbox("Caso", casos["ID"])
+    monto = st.number_input("Monto Pagado", min_value=0.0)
     if st.button("Registrar Pago"):
-        nuevo = len(pagos_litis)+1
+        nuevo = pagos_litis["ID"].max()+1 if not pagos_litis.empty else 1
         pagos_litis.loc[len(pagos_litis)] = [nuevo,caso,monto]
         save("pagos_litis", pagos_litis)
         st.rerun()
-
-    tabla_editable(pagos_litis,"pagos_litis")
-
-# ==============================
-# CRONOGRAMA
-# ==============================
-
-if menu == "Cronograma":
-    st.title("Cronograma")
-
-    caso = st.number_input("ID Caso", min_value=1)
-    fecha = st.date_input("Fecha")
-    monto = st.number_input("Monto", min_value=0.0)
-    estado = st.selectbox("Estado",["Pendiente","Pagado"])
-
-    if st.button("Guardar Cuota"):
-        nuevo = len(cronograma)+1
-        cronograma.loc[len(cronograma)] = [nuevo,caso,fecha,monto,estado]
-        save("cronograma", cronograma)
-        st.rerun()
-
-    tabla_editable(cronograma,"cronograma")
+    pagos_litis = eliminar_registro(pagos_litis,"pagos_litis")
 
 # ==============================
 # PENDIENTES
 # ==============================
 
 if menu == "Pendientes":
-    st.title("Pendientes")
 
-    pendientes = cronograma[cronograma["Estado"]=="Pendiente"]
-    st.dataframe(pendientes)
+    st.subheader("Pendientes Cronograma")
+    pendientes_crono = cronograma[cronograma["Estado"]=="Pendiente"]
+    st.dataframe(pendientes_crono)
+
+    st.subheader("Pendientes Honorarios")
+    if not honorarios.empty:
+        total_pactado = honorarios.groupby("CasoID")["Monto Pactado"].sum()
+        total_pagado = pagos_honorarios.groupby("CasoID")["Monto"].sum()
+        resumen = pd.DataFrame({
+            "Pactado": total_pactado,
+            "Pagado": total_pagado
+        }).fillna(0)
+        resumen["Pendiente"] = resumen["Pactado"] - resumen["Pagado"]
+        st.dataframe(resumen)
 
 # ==============================
 # RESUMEN FINANCIERO
 # ==============================
 
-if menu == "Resumen Financiero" and st.session_state.rol=="admin":
-    st.title("Resumen Financiero")
+if menu == "Resumen Financiero":
 
-    total_litis = pagos_litis["Monto"].sum() if not pagos_litis.empty else 0
-    st.metric("Total Cuota Litis Cobrado", f"S/ {total_litis:,.2f}")
+    st.subheader("Resumen Honorarios")
+    if not honorarios.empty:
+        tabla = honorarios.merge(casos, left_on="CasoID", right_on="ID")
+        st.dataframe(tabla[["Cliente","Expediente","Año","Monto Pactado"]])
+
+    st.subheader("Resumen Cuota Litis")
+    if not cuota_litis.empty:
+        tabla2 = cuota_litis.merge(casos, left_on="CasoID", right_on="ID")
+        st.dataframe(tabla2[["Cliente","Expediente","Monto Base","Porcentaje"]])
 
 # ==============================
-# USUARIOS
+# REPORTE POR CLIENTE
 # ==============================
 
-if menu == "Usuarios" and st.session_state.rol=="admin":
-    st.title("Usuarios")
-
-    lista_abogados = abogados["Nombre"].tolist()
-
-    usuario = st.text_input("Usuario")
-    password = st.text_input("Password")
-    rol = st.selectbox("Rol",["admin","abogado"])
-    abogado = ""
-
-    if rol=="abogado":
-        abogado = st.selectbox("Asignar Abogado", lista_abogados)
-
-    if st.button("Crear Usuario"):
-        nuevo = len(usuarios)+1
-        usuarios.loc[len(usuarios)] = [nuevo,usuario,password,rol,abogado]
-        save("usuarios", usuarios)
-        st.rerun()
-
-    tabla_editable(usuarios,"usuarios")
+if menu == "Reporte por Cliente":
+    cliente_sel = st.selectbox("Seleccionar Cliente", clientes["Nombre"])
+    casos_cli = casos[casos["Cliente"]==cliente_sel]
+    st.dataframe(casos_cli)
