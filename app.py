@@ -805,4 +805,3 @@ if menu == "Resumen Financiero":
         st.info("No hay cuotas pendientes registradas.")
     else:
         st.dataframe(df_pend[["Caso","Tipo","NroCuota","FechaVenc","Monto","PagadoAsignado","SaldoCuota","Estado","DiasParaVencimiento"]], use_container_width=True)
-``
