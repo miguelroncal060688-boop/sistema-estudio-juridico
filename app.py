@@ -1573,3 +1573,221 @@ if menu == "Auditoría":
         st.dataframe(hu, use_container_width=True)
     else:
         st.info("No hay consultas.")
+# ==========================================================
+# ======= PARCHE MARCA 004 (INSERTAR DESPUÉS DE LÍNEA 1575) ==
+# Objetivo: NO recortar nada, solo mejorar lo indicado:
+#  - Dashboard: cronograma visible aunque df_estado esté vacío
+#  - Resumen económico: tabla consolidada visible
+#  - Cuota Litis y Pagos Litis: CRUD completo visible
+#  - Reporte por abogado y sus casos
+# ==========================================================
+
+# ----------------------------------------------------------
+# 1) DASHBOARD: Cronograma visible aunque no haya pagos
+#    (No toca tu dashboard, solo añade salida si corresponde)
+# ----------------------------------------------------------
+try:
+    if 'menu' in globals() and menu == "Dashboard":
+        # Mostrar cronograma base si hay cuotas aunque df_estado sea vacío
+        st.divider()
+        st.markdown("### 📅 Cronograma (visible aunque no haya pagos)")
+
+        # Si existe cuotas.csv se debe mostrar siempre
+        if 'cuotas' in globals() and not cuotas.empty:
+            # Si df_estado está vacío o no tiene columnas esperadas, mostrar cronograma base
+            if ('df_estado' not in globals()) or (df_estado is None) or (getattr(df_estado, "empty", True)) or ("SaldoCuota" not in getattr(df_estado, "columns", [])):
+                st.info("Hay cuotas registradas, pero aún no hay pagos asignados. Mostrando cronograma base.")
+                st.dataframe(
+                    cuotas.sort_values(["Caso", "Tipo", "NroCuota"], ascending=[True, True, True]),
+                    use_container_width=True
+                )
+            else:
+                st.dataframe(
+                    df_estado.sort_values(["Caso", "Tipo", "NroCuota"], ascending=[True, True, True]),
+                    use_container_width=True
+                )
+        else:
+            st.info("No hay cuotas registradas aún.")
+
+        # Resumen económico consolidado (tabla)
+        st.divider()
+        st.markdown("### 📊 Resumen económico consolidado")
+        if 'resumen_financiero_df' in globals():
+            df_res_local = resumen_financiero_df()
+            st.dataframe(df_res_local, use_container_width=True)
+except Exception:
+    pass
+
+# ----------------------------------------------------------
+# 2) CUOTA LITIS: asegurar CRUD visible (no borra tu menú)
+# ----------------------------------------------------------
+def _patch_render_cuota_litis_menu():
+    st.subheader("⚖️ Cuota Litis (restaurado)")
+    st.dataframe(cuota_litis.sort_values("ID", ascending=False), use_container_width=True)
+
+    exp_list = casos["Expediente"].tolist() if not casos.empty else []
+    if exp_list:
+        exp = st.selectbox("Expediente", exp_list, key="patch_cl_exp")
+        base = st.number_input("Monto base", min_value=0.0, step=100.0, key="patch_cl_base")
+        porc = st.number_input("Porcentaje (%)", min_value=0.0, step=1.0, key="patch_cl_porc")
+        notas = st.text_input("Notas", value="", key="patch_cl_notas")
+
+        if st.button("Guardar cuota litis", key="patch_cl_save"):
+            new_id = next_id(cuota_litis)
+            nueva = {
+                "ID": new_id,
+                "Caso": normalize_key(exp),
+                "Monto Base": float(base),
+                "Porcentaje": float(porc),
+                "Notas": notas,
+                "FechaRegistro": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            df2 = add_row(cuota_litis, nueva, "cuota_litis")
+            save_df("cuota_litis", df2)
+            st.success("✅ Cuota litis guardada")
+            st.rerun()
+
+    st.divider()
+    st.markdown("### Editar / borrar (por ID)")
+    if not cuota_litis.empty:
+        sel = st.selectbox("Cuota Litis ID", cuota_litis["ID"].tolist(), key="patch_cl_sel")
+        fila = cuota_litis[cuota_litis["ID"] == sel].iloc[0]
+
+        with st.form("patch_cl_edit_form"):
+            caso_e = st.text_input("Expediente", value=str(fila["Caso"]), key="patch_cl_caso_e")
+            base_e = st.number_input("Monto base", min_value=0.0, value=money(fila["Monto Base"]), step=100.0, key="patch_cl_base_e")
+            porc_e = st.number_input("Porcentaje", min_value=0.0, value=money(fila["Porcentaje"]), step=1.0, key="patch_cl_porc_e")
+            notas_e = st.text_input("Notas", value=str(fila["Notas"]), key="patch_cl_notas_e")
+            submit = st.form_submit_button("Guardar cambios")
+            if submit:
+                idx = cuota_litis.index[cuota_litis["ID"] == sel][0]
+                cuota_litis.loc[idx, ["Caso","Monto Base","Porcentaje","Notas"]] = [normalize_key(caso_e), float(base_e), float(porc_e), notas_e]
+                save_df("cuota_litis", cuota_litis)
+                st.success("✅ Actualizado")
+                st.rerun()
+
+        if st.button("🗑️ Borrar cuota litis", key="patch_cl_del"):
+            df2 = cuota_litis[cuota_litis["ID"] != sel].copy()
+            save_df("cuota_litis", df2)
+            st.success("✅ Eliminado")
+            st.rerun()
+
+    st.download_button("⬇️ Descargar cuota litis (CSV)", cuota_litis.to_csv(index=False).encode("utf-8"), "cuota_litis.csv")
+
+# ----------------------------------------------------------
+# 3) PAGOS LITIS: asegurar CRUD visible (no borra tu menú)
+# ----------------------------------------------------------
+def _patch_render_pagos_litis_menu():
+    st.subheader("💳 Pagos Cuota Litis (restaurado)")
+    st.dataframe(pagos_litis.sort_values("FechaPago", ascending=False), use_container_width=True)
+
+    exp_list = casos["Expediente"].tolist() if not casos.empty else []
+    if exp_list:
+        exp = st.selectbox("Expediente", exp_list, key="patch_pl_exp")
+        fecha = st.date_input("Fecha pago", value=date.today(), key="patch_pl_fecha")
+        monto = st.number_input("Monto pagado", min_value=0.0, step=50.0, key="patch_pl_monto")
+        obs = st.text_input("Observación", value="", key="patch_pl_obs")
+
+        if st.button("Registrar pago litis", key="patch_pl_save"):
+            new_id = next_id(pagos_litis)
+            nueva = {
+                "ID": new_id,
+                "Caso": normalize_key(exp),
+                "FechaPago": str(fecha),
+                "Monto": float(monto),
+                "Observacion": obs
+            }
+            df2 = add_row(pagos_litis, nueva, "pagos_litis")
+            save_df("pagos_litis", df2)
+            st.success("✅ Pago litis guardado")
+            st.rerun()
+
+    st.divider()
+    st.markdown("### Editar / borrar (por ID)")
+    if not pagos_litis.empty:
+        sel = st.selectbox("Pago ID", pagos_litis["ID"].tolist(), key="patch_pl_sel")
+        fila = pagos_litis[pagos_litis["ID"] == sel].iloc[0]
+
+        with st.form("patch_pl_edit_form"):
+            caso_e = st.text_input("Expediente", value=str(fila["Caso"]), key="patch_pl_caso_e")
+            fecha_e = st.text_input("FechaPago (YYYY-MM-DD)", value=str(fila["FechaPago"]), key="patch_pl_fecha_e")
+            monto_e = st.number_input("Monto", min_value=0.0, value=money(fila["Monto"]), step=50.0, key="patch_pl_monto_e")
+            obs_e = st.text_input("Observación", value=str(fila["Observacion"]), key="patch_pl_obs_e")
+            submit = st.form_submit_button("Guardar cambios")
+            if submit:
+                idx = pagos_litis.index[pagos_litis["ID"] == sel][0]
+                pagos_litis.loc[idx, :] = [sel, normalize_key(caso_e), fecha_e, float(monto_e), obs_e]
+                save_df("pagos_litis", pagos_litis)
+                st.success("✅ Actualizado")
+                st.rerun()
+
+        if st.button("🗑️ Borrar pago litis", key="patch_pl_del"):
+            df2 = pagos_litis[pagos_litis["ID"] != sel].copy()
+            save_df("pagos_litis", df2)
+            st.success("✅ Eliminado")
+            st.rerun()
+
+    st.download_button("⬇️ Descargar pagos litis (CSV)", pagos_litis.to_csv(index=False).encode("utf-8"), "pagos_litis.csv")
+
+# ----------------------------------------------------------
+# 4) Reporte por Abogado: bloque seguro (no destruye tabs existentes)
+#    Se activa dentro de menu == "Reportes" si existe df_res y casos
+# ----------------------------------------------------------
+def _patch_reporte_por_abogado():
+    st.markdown("### 👨‍⚖️ Reporte por abogado y sus casos (añadido)")
+    if casos.empty:
+        st.info("No hay casos registrados.")
+        return
+    df_res = resumen_financiero_df() if 'resumen_financiero_df' in globals() else pd.DataFrame()
+    if df_res.empty:
+        st.info("No hay datos financieros aún.")
+        return
+
+    # unir abogado
+    dfm = df_res.merge(casos[["Expediente","Abogado"]], on="Expediente", how="left")
+
+    rep_ab = dfm.groupby("Abogado", as_index=False).agg({
+        "Honorario Pactado":"sum",
+        "Honorario Pagado":"sum",
+        "Honorario Pendiente":"sum",
+        "Saldo Litis":"sum"
+    })
+
+    st.dataframe(rep_ab, use_container_width=True)
+    st.download_button("⬇️ Descargar reporte por abogado (CSV)", rep_ab.to_csv(index=False).encode("utf-8"), "reporte_por_abogado.csv")
+
+    st.divider()
+    st.markdown("#### Detalle de casos por abogado")
+    abogados_disp = [a for a in rep_ab["Abogado"].dropna().tolist() if str(a).strip() != ""]
+    if not abogados_disp:
+        st.info("No hay abogado asociado en los casos.")
+        return
+
+    ab_sel = st.selectbox("Selecciona abogado", abogados_disp, key="patch_ab_sel")
+    det = dfm[dfm["Abogado"] == ab_sel].copy()
+    st.dataframe(det, use_container_width=True)
+    st.download_button("⬇️ Descargar detalle abogado (CSV)", det.to_csv(index=False).encode("utf-8"), f"reporte_detalle_{ab_sel}.csv")
+
+# ----------------------------------------------------------
+# Activación “sin tocar tu código”: si el menú coincide, muestra el bloque
+# ----------------------------------------------------------
+try:
+    if 'menu' in globals() and menu == "Cuota Litis":
+        _patch_render_cuota_litis_menu()
+except Exception:
+    pass
+
+try:
+    if 'menu' in globals() and menu == "Pagos Cuota Litis":
+        _patch_render_pagos_litis_menu()
+except Exception:
+    pass
+
+try:
+    if 'menu' in globals() and menu == "Reportes":
+        st.divider()
+        _patch_reporte_por_abogado()
+except Exception:
+    pass
+
+# =================== FIN PARCHE MARCA 004 ==================
