@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 import os
+from datetime import date
 
 st.set_page_config(page_title="⚖️ Estudio Jurídico Roncal Liñán y Asociados", layout="wide")
 
-# =========================
+# =====================================================
 # ARCHIVOS
-# =========================
+# =====================================================
 
 FILES = {
     "clientes": "clientes.csv",
@@ -15,40 +16,35 @@ FILES = {
     "honorarios": "honorarios.csv",
     "pagos_honorarios": "pagos_honorarios.csv",
     "cuota_litis": "cuota_litis.csv",
-    "pagos_litis": "pagos_litis.csv"
+    "pagos_litis": "pagos_litis.csv",
+    "cronograma": "cronograma.csv"
 }
 
-# =========================
+# =====================================================
 # CREAR CSV SI NO EXISTEN
-# =========================
+# =====================================================
 
 def init_csv():
-    if not os.path.exists(FILES["clientes"]):
-        pd.DataFrame(columns=["ID","Nombre","DNI","Celular","Correo","Direccion","Observaciones"]).to_csv(FILES["clientes"], index=False)
+    estructuras = {
+        "clientes": ["ID","Nombre","DNI","Celular","Correo","Direccion","Observaciones"],
+        "abogados": ["ID","Nombre","DNI","Celular","Correo","Colegiatura","Domicilio Procesal","Casilla Electronica","Casilla Judicial"],
+        "casos": ["ID","Cliente","Abogado","Expediente","Año","Materia","Pretension","Observaciones"],
+        "honorarios": ["Caso","Monto Pactado"],
+        "pagos_honorarios": ["Caso","Monto"],
+        "cuota_litis": ["Caso","Monto Base","Porcentaje"],
+        "pagos_litis": ["Caso","Monto"],
+        "cronograma": ["ID","Caso","Fecha Programada","Monto","Estado"]
+    }
 
-    if not os.path.exists(FILES["abogados"]):
-        pd.DataFrame(columns=["ID","Nombre","DNI","Celular","Correo","Colegiatura","Domicilio Procesal","Casilla Electronica","Casilla Judicial"]).to_csv(FILES["abogados"], index=False)
-
-    if not os.path.exists(FILES["casos"]):
-        pd.DataFrame(columns=["ID","Cliente","Abogado","Expediente","Año","Materia","Pretension","Observaciones"]).to_csv(FILES["casos"], index=False)
-
-    if not os.path.exists(FILES["honorarios"]):
-        pd.DataFrame(columns=["Caso","Monto Pactado"]).to_csv(FILES["honorarios"], index=False)
-
-    if not os.path.exists(FILES["pagos_honorarios"]):
-        pd.DataFrame(columns=["Caso","Monto"]).to_csv(FILES["pagos_honorarios"], index=False)
-
-    if not os.path.exists(FILES["cuota_litis"]):
-        pd.DataFrame(columns=["Caso","Monto Base","Porcentaje"]).to_csv(FILES["cuota_litis"], index=False)
-
-    if not os.path.exists(FILES["pagos_litis"]):
-        pd.DataFrame(columns=["Caso","Monto"]).to_csv(FILES["pagos_litis"], index=False)
+    for key, cols in estructuras.items():
+        if not os.path.exists(FILES[key]):
+            pd.DataFrame(columns=cols).to_csv(FILES[key], index=False)
 
 init_csv()
 
-# =========================
-# LOGIN
-# =========================
+# =====================================================
+# USUARIOS
+# =====================================================
 
 if "usuarios" not in st.session_state:
     st.session_state.usuarios = {
@@ -58,6 +54,7 @@ if "usuarios" not in st.session_state:
 if "usuario" not in st.session_state:
     st.session_state.usuario = None
 
+# LOGIN
 if st.session_state.usuario is None:
     st.title("⚖️ Estudio Jurídico Roncal Liñán y Asociados")
     st.subheader("Ingreso al Sistema")
@@ -75,13 +72,14 @@ if st.session_state.usuario is None:
     st.stop()
 
 st.sidebar.write(f"Usuario: {st.session_state.usuario}")
+
 if st.sidebar.button("Cerrar sesión"):
     st.session_state.usuario = None
     st.rerun()
 
-# =========================
+# =====================================================
 # CARGAR DATA
-# =========================
+# =====================================================
 
 clientes = pd.read_csv(FILES["clientes"])
 abogados = pd.read_csv(FILES["abogados"])
@@ -90,6 +88,28 @@ honorarios = pd.read_csv(FILES["honorarios"])
 pagos_honorarios = pd.read_csv(FILES["pagos_honorarios"])
 cuota_litis = pd.read_csv(FILES["cuota_litis"])
 pagos_litis = pd.read_csv(FILES["pagos_litis"])
+cronograma = pd.read_csv(FILES["cronograma"])
+
+# =====================================================
+# CALCULOS GENERALES
+# =====================================================
+
+total_pactado = honorarios["Monto Pactado"].sum()
+total_pagado_h = pagos_honorarios["Monto"].sum()
+pendiente_h = total_pactado - total_pagado_h
+
+total_base = cuota_litis["Monto Base"].sum()
+total_calculada = (cuota_litis["Monto Base"] * cuota_litis["Porcentaje"] / 100).sum()
+total_pagado_l = pagos_litis["Monto"].sum()
+pendiente_l = total_calculada - total_pagado_l
+
+pendiente_cronograma = cronograma[cronograma["Estado"]=="Pendiente"]["Monto"].sum()
+
+total_general_pendiente = pendiente_h + pendiente_l + pendiente_cronograma
+
+# =====================================================
+# MENU
+# =====================================================
 
 menu = st.sidebar.selectbox("Menú", [
     "Dashboard",
@@ -100,217 +120,130 @@ menu = st.sidebar.selectbox("Menú", [
     "Pagos Honorarios",
     "Cuota Litis",
     "Pagos Cuota Litis",
+    "Cronograma de Cuotas",
+    "Pendientes de Cobro",
     "Resumen Financiero"
 ])
 
-# =========================
+# =====================================================
 # DASHBOARD
-# =========================
+# =====================================================
 
 if menu == "Dashboard":
-    st.title("Dashboard General")
+    st.title("📊 Dashboard Financiero")
 
-    st.metric("Total Clientes", len(clientes))
-    st.metric("Total Casos", len(casos))
-    st.metric("Total Abogados", len(abogados))
+    col1,col2,col3 = st.columns(3)
+    col1.metric("Total Honorarios Pactados", f"S/ {total_pactado:,.2f}")
+    col2.metric("Total Cobrado Honorarios", f"S/ {total_pagado_h:,.2f}")
+    col3.metric("Pendiente Honorarios", f"S/ {pendiente_h:,.2f}")
 
-# =========================
-# CLIENTES
-# =========================
+    st.divider()
 
-if menu == "Clientes":
-    st.title("Clientes")
+    col4,col5,col6 = st.columns(3)
+    col4.metric("Cuota Litis Calculada", f"S/ {total_calculada:,.2f}")
+    col5.metric("Cobrado Cuota Litis", f"S/ {total_pagado_l:,.2f}")
+    col6.metric("Pendiente Cuota Litis", f"S/ {pendiente_l:,.2f}")
 
-    with st.form("nuevo_cliente"):
-        nombre = st.text_input("Nombre")
-        dni = st.text_input("DNI")
-        celular = st.text_input("Celular")
-        correo = st.text_input("Correo")
-        direccion = st.text_input("Dirección")
-        obs = st.text_area("Observaciones")
-        submit = st.form_submit_button("Guardar")
+    st.divider()
 
-        if submit:
-            new_id = len(clientes) + 1
-            clientes.loc[len(clientes)] = [new_id,nombre,dni,celular,correo,direccion,obs]
-            clientes.to_csv(FILES["clientes"], index=False)
-            st.success("Cliente registrado")
-            st.rerun()
+    st.metric("Pendiente Cronograma", f"S/ {pendiente_cronograma:,.2f}")
+    st.metric("TOTAL GENERAL PENDIENTE", f"S/ {total_general_pendiente:,.2f}")
+
+# =====================================================
+# CRONOGRAMA
+# =====================================================
+
+if menu == "Cronograma de Cuotas":
+    st.title("📅 Cronograma de Cuotas")
+
+    caso = st.selectbox("Expediente", casos["Expediente"] if not casos.empty else [])
+    fecha = st.date_input("Fecha Programada", value=date.today())
+    monto = st.number_input("Monto", min_value=0.0)
+
+    if st.button("Agregar Cuota"):
+        new_id = len(cronograma) + 1
+        cronograma.loc[len(cronograma)] = [new_id, caso, fecha, monto, "Pendiente"]
+        cronograma.to_csv(FILES["cronograma"], index=False)
+        st.success("Cuota agregada")
+        st.rerun()
 
     st.subheader("Listado")
-    st.dataframe(clientes)
+    st.dataframe(cronograma)
 
-# =========================
-# ABOGADOS
-# =========================
+    id_pago = st.number_input("ID a marcar como pagado", min_value=1, step=1)
 
-if menu == "Abogados":
-    st.title("Abogados")
-
-    with st.form("nuevo_abogado"):
-        nombre = st.text_input("Nombre")
-        dni = st.text_input("DNI")
-        celular = st.text_input("Celular")
-        correo = st.text_input("Correo")
-        coleg = st.text_input("Colegiatura")
-        dom = st.text_input("Domicilio Procesal")
-        cas_e = st.text_input("Casilla Electrónica")
-        cas_j = st.text_input("Casilla Judicial")
-        submit = st.form_submit_button("Guardar")
-
-        if submit:
-            new_id = len(abogados) + 1
-            abogados.loc[len(abogados)] = [new_id,nombre,dni,celular,correo,coleg,dom,cas_e,cas_j]
-            abogados.to_csv(FILES["abogados"], index=False)
-            st.success("Abogado registrado")
-            st.rerun()
-
-    st.subheader("Listado")
-    st.dataframe(abogados)
-
-# =========================
-# CASOS
-# =========================
-
-if menu == "Casos":
-    st.title("Casos")
-
-    with st.form("nuevo_caso"):
-        cliente = st.selectbox("Cliente", clientes["Nombre"] if not clientes.empty else [])
-        abogado = st.selectbox("Abogado", abogados["Nombre"] if not abogados.empty else [])
-        expediente = st.text_input("Número de Expediente")
-        año = st.text_input("Año")
-        materia = st.text_input("Materia")
-        pretension = st.text_input("Pretensión")
-        obs = st.text_area("Observaciones")
-        submit = st.form_submit_button("Guardar")
-
-        if submit:
-            new_id = len(casos) + 1
-            casos.loc[len(casos)] = [new_id,cliente,abogado,expediente,año,materia,pretension,obs]
-            casos.to_csv(FILES["casos"], index=False)
-            st.success("Caso registrado")
-            st.rerun()
-
-    st.subheader("Listado")
-    st.dataframe(casos)
-
-# =========================
-# HONORARIOS
-# =========================
-
-if menu == "Honorarios":
-    st.title("Honorarios Pactados")
-
-    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
-    monto = st.number_input("Monto Pactado", min_value=0.0)
-
-    if st.button("Guardar"):
-        honorarios.loc[len(honorarios)] = [caso,monto]
-        honorarios.to_csv(FILES["honorarios"], index=False)
-        st.success("Honorario guardado")
+    if st.button("Marcar como Pagado"):
+        cronograma.loc[cronograma["ID"]==id_pago,"Estado"]="Pagado"
+        cronograma.to_csv(FILES["cronograma"], index=False)
+        st.success("Actualizado")
         st.rerun()
 
-    st.dataframe(honorarios)
+# =====================================================
+# PENDIENTES
+# =====================================================
 
-# =========================
-# PAGOS HONORARIOS
-# =========================
+if menu == "Pendientes de Cobro":
+    st.title("💰 Pendientes por Expediente")
 
-if menu == "Pagos Honorarios":
-    st.title("Pagos de Honorarios")
+    data = []
 
-    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
-    monto = st.number_input("Monto Pagado", min_value=0.0)
+    for _, c in casos.iterrows():
+        exp = c["Expediente"]
 
-    if st.button("Registrar Pago"):
-        pagos_honorarios.loc[len(pagos_honorarios)] = [caso,monto]
-        pagos_honorarios.to_csv(FILES["pagos_honorarios"], index=False)
-        st.success("Pago registrado")
-        st.rerun()
+        pactado = honorarios[honorarios["Caso"]==exp]["Monto Pactado"].sum()
+        pagado_h = pagos_honorarios[pagos_honorarios["Caso"]==exp]["Monto"].sum()
+        pend_h = pactado - pagado_h
 
-    st.dataframe(pagos_honorarios)
+        base = cuota_litis[cuota_litis["Caso"]==exp]["Monto Base"].sum()
+        porc = cuota_litis[cuota_litis["Caso"]==exp]["Porcentaje"].sum()
+        calc = base*porc/100
+        pagado_l = pagos_litis[pagos_litis["Caso"]==exp]["Monto"].sum()
+        pend_l = calc - pagado_l
 
-# =========================
-# CUOTA LITIS
-# =========================
+        pend_cr = cronograma[(cronograma["Caso"]==exp)&(cronograma["Estado"]=="Pendiente")]["Monto"].sum()
 
-if menu == "Cuota Litis":
-    st.title("Cuota Litis")
+        total = pend_h + pend_l + pend_cr
 
-    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
-    base = st.number_input("Monto Base", min_value=0.0)
-    porcentaje = st.number_input("Porcentaje (%)", min_value=0.0)
+        if total>0:
+            data.append([exp,pend_h,pend_l,pend_cr,total])
 
-    if st.button("Guardar Cuota Litis"):
-        cuota_litis.loc[len(cuota_litis)] = [caso,base,porcentaje]
-        cuota_litis.to_csv(FILES["cuota_litis"], index=False)
-        st.success("Cuota Litis guardada")
-        st.rerun()
+    df = pd.DataFrame(data,columns=["Expediente","Pendiente Honorarios","Pendiente Litis","Pendiente Cronograma","Total Pendiente"])
 
-    st.dataframe(cuota_litis)
+    st.dataframe(df)
+    st.metric("TOTAL GENERAL PENDIENTE", f"S/ {df['Total Pendiente'].sum():,.2f}")
 
-# =========================
-# PAGOS CUOTA LITIS
-# =========================
-
-if menu == "Pagos Cuota Litis":
-    st.title("Pagos Cuota Litis")
-
-    caso = st.selectbox("Caso", casos["Expediente"] if not casos.empty else [])
-    monto = st.number_input("Monto Pagado", min_value=0.0)
-
-    if st.button("Registrar Pago Litis"):
-        pagos_litis.loc[len(pagos_litis)] = [caso,monto]
-        pagos_litis.to_csv(FILES["pagos_litis"], index=False)
-        st.success("Pago registrado")
-        st.rerun()
-
-    st.dataframe(pagos_litis)
-
-# =========================
+# =====================================================
 # RESUMEN FINANCIERO
-# =========================
+# =====================================================
 
 if menu == "Resumen Financiero":
-    st.title("Resumen Financiero")
+    st.title("📑 Resumen Financiero General")
 
-    if not casos.empty:
-        resumen = []
+    resumen = []
 
-        for _, c in casos.iterrows():
-            expediente = c["Expediente"]
+    for _, c in casos.iterrows():
+        exp = c["Expediente"]
 
-            pactado = honorarios[honorarios["Caso"] == expediente]["Monto Pactado"].sum()
-            pagado_h = pagos_honorarios[pagos_honorarios["Caso"] == expediente]["Monto"].sum()
+        pactado = honorarios[honorarios["Caso"]==exp]["Monto Pactado"].sum()
+        pagado_h = pagos_honorarios[pagos_honorarios["Caso"]==exp]["Monto"].sum()
+        pend_h = pactado - pagado_h
 
-            base = cuota_litis[cuota_litis["Caso"] == expediente]["Monto Base"].sum()
-            porcentaje = cuota_litis[cuota_litis["Caso"] == expediente]["Porcentaje"].sum()
-            calculada = base * porcentaje / 100
-            pagado_l = pagos_litis[pagos_litis["Caso"] == expediente]["Monto"].sum()
+        base = cuota_litis[cuota_litis["Caso"]==exp]["Monto Base"].sum()
+        porc = cuota_litis[cuota_litis["Caso"]==exp]["Porcentaje"].sum()
+        calc = base*porc/100
+        pagado_l = pagos_litis[pagos_litis["Caso"]==exp]["Monto"].sum()
+        pend_l = calc - pagado_l
 
-            resumen.append([
-                expediente,
-                pactado,
-                pagado_h,
-                pactado - pagado_h,
-                base,
-                porcentaje,
-                calculada,
-                pagado_l,
-                calculada - pagado_l
-            ])
+        resumen.append([exp,pactado,pagado_h,pend_h,calc,pagado_l,pend_l])
 
-        df_resumen = pd.DataFrame(resumen, columns=[
-            "Expediente",
-            "Honorario Pactado",
-            "Honorario Pagado",
-            "Honorario Pendiente",
-            "Monto Base",
-            "Porcentaje",
-            "Cuota Litis Calculada",
-            "Pagado Litis",
-            "Saldo Litis"
-        ])
+    df = pd.DataFrame(resumen,columns=[
+        "Expediente",
+        "Honorario Pactado",
+        "Honorario Pagado",
+        "Honorario Pendiente",
+        "Cuota Litis Calculada",
+        "Cuota Litis Pagada",
+        "Cuota Litis Pendiente"
+    ])
 
-        st.dataframe(df_resumen)
+    st.dataframe(df)
