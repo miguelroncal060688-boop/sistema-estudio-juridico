@@ -16,7 +16,7 @@ FILES = {
     "pagos_honorarios": "pagos_honorarios.csv",
     "cuota_litis": "cuota_litis.csv",
     "pagos_litis": "pagos_litis.csv",
-    "cuotas": "cuotas.csv",  # Cronograma de cuotas
+    "cuotas": "cuotas.csv",
 }
 
 # =========================
@@ -28,48 +28,70 @@ SCHEMAS = {
     "casos": ["ID","Cliente","Abogado","Expediente","Año","Materia","Pretension","Observaciones"],
     "honorarios": ["Caso","Monto Pactado"],
 
-    # Pagos con fecha + observación
+    # pagos con ID + fecha + obs
     "pagos_honorarios": ["ID","Caso","FechaPago","Monto","Observacion"],
     "cuota_litis": ["Caso","Monto Base","Porcentaje"],
     "pagos_litis": ["ID","Caso","FechaPago","Monto","Observacion"],
 
-    # Cronograma: cuotas con vencimiento
-    "cuotas": ["ID","Caso","Tipo","NroCuota","FechaVenc","Monto","Notas"]
+    # cronograma de cuotas
+    "cuotas": ["ID","Caso","Tipo","NroCuota","FechaVenc","Monto","Notas"],
 }
 
 # =========================
-# UTILIDADES CSV (robustas)
+# UTILIDADES
 # =========================
 def drop_unnamed(df: pd.DataFrame) -> pd.DataFrame:
-    """Elimina columnas tipo Unnamed: 0 si existieran."""
     return df.loc[:, ~df.columns.str.contains(r"^Unnamed", case=False, na=False)]
 
 def ensure_csv(key: str):
-    """Crea el CSV si no existe y lo migra si le faltan columnas."""
+    """
+    Crea o repara CSV:
+    - si no existe: lo crea con cabeceras
+    - si existe pero está vacío (0 bytes) o sin cabeceras: lo recrea
+    - si le faltan columnas: lo migra
+    """
     path = FILES[key]
     cols = SCHEMAS[key]
 
+    # no existe -> crear
     if not os.path.exists(path):
         pd.DataFrame(columns=cols).to_csv(path, index=False)
         return
 
-    df = pd.read_csv(path)
+    # existe pero 0 bytes -> recrear
+    try:
+        if os.path.getsize(path) == 0:
+            pd.DataFrame(columns=cols).to_csv(path, index=False)
+            return
+    except OSError:
+        pass
+
+    # intentar leer; si está vacío -> recrear
+    try:
+        df = pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        pd.DataFrame(columns=cols).to_csv(path, index=False)
+        return
+
+    # limpiar Unnamed
     df = drop_unnamed(df)
 
-    # Agregar columnas faltantes
-    missing = [c for c in cols if c not in df.columns]
-    for c in missing:
-        df[c] = ""
+    # agregar columnas faltantes
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
 
-    # Quitar columnas sobrantes y ordenar según esquema
+    # dejar solo columnas del esquema y ordenarlas
     df = df.reindex(columns=cols)
     df.to_csv(path, index=False)
 
 def load_df(key: str) -> pd.DataFrame:
     ensure_csv(key)
-    df = pd.read_csv(FILES[key])
+    try:
+        df = pd.read_csv(FILES[key])
+    except pd.errors.EmptyDataError:
+        df = pd.DataFrame(columns=SCHEMAS[key])
     df = drop_unnamed(df)
-    # Forzar columnas y orden correctos
     df = df.reindex(columns=SCHEMAS[key])
     return df
 
@@ -82,18 +104,14 @@ def next_id(df: pd.DataFrame) -> int:
     if df.empty:
         return 1
     try:
-        s = pd.to_numeric(df["ID"], errors="coerce")
-        m = s.max()
+        m = pd.to_numeric(df["ID"], errors="coerce").max()
         return int(m) + 1 if pd.notna(m) else len(df) + 1
     except Exception:
         return len(df) + 1
 
-def add_row(df: pd.DataFrame, row_dict: dict, key: str) -> pd.DataFrame:
-    """
-    Añade una fila por diccionario (evita mismatched columns).
-    """
+def add_row(df: pd.DataFrame, row_dict: dict, schema_key: str) -> pd.DataFrame:
     df2 = pd.concat([df, pd.DataFrame([row_dict])], ignore_index=True)
-    df2 = df2.reindex(columns=SCHEMAS[key])
+    df2 = df2.reindex(columns=SCHEMAS[schema_key])
     return df2
 
 def to_date_safe(x):
@@ -104,17 +122,17 @@ def to_date_safe(x):
     except Exception:
         return None
 
-# Inicializar todos los CSV
+# =========================
+# Inicializar CSVs
+# =========================
 for k in FILES:
     ensure_csv(k)
 
 # =========================
-# LOGIN (simple)
+# LOGIN
 # =========================
 if "usuarios" not in st.session_state:
-    st.session_state.usuarios = {
-        "admin": {"password": "estudio123", "rol": "admin"}
-    }
+    st.session_state.usuarios = {"admin": {"password": "estudio123", "rol": "admin"}}
 
 if "usuario" not in st.session_state:
     st.session_state.usuario = None
@@ -132,6 +150,7 @@ if st.session_state.usuario is None:
             st.rerun()
         else:
             st.error("Credenciales incorrectas")
+
     st.stop()
 
 st.sidebar.write(f"Usuario: {st.session_state.usuario}")
@@ -165,7 +184,7 @@ menu = st.sidebar.selectbox("Menú", [
 ])
 
 # =========================
-# FINANZAS: RESUMEN
+# FINANZAS
 # =========================
 def resumen_financiero_df():
     if casos.empty:
@@ -208,11 +227,7 @@ def resumen_financiero_df():
     ])
 
 def allocate_payments_oldest_first(cuotas_tipo_df: pd.DataFrame, pagos_tipo_df: pd.DataFrame):
-    """
-    Aplica pagos a cuotas desde la más antigua (FechaVenc).
-    """
     today = date.today()
-
     if cuotas_tipo_df.empty:
         return cuotas_tipo_df
 
@@ -220,7 +235,6 @@ def allocate_payments_oldest_first(cuotas_tipo_df: pd.DataFrame, pagos_tipo_df: 
     df["Monto"] = pd.to_numeric(df["Monto"], errors="coerce").fillna(0.0)
     df["FechaVenc_dt"] = df["FechaVenc"].apply(to_date_safe)
     df["_sort_date"] = df["FechaVenc_dt"].apply(lambda d: d if d is not None else date(2100,1,1))
-
     df.sort_values(["Caso","_sort_date","NroCuota"], inplace=True)
 
     pagos_tipo_df = pagos_tipo_df.copy()
@@ -228,11 +242,7 @@ def allocate_payments_oldest_first(cuotas_tipo_df: pd.DataFrame, pagos_tipo_df: 
     pagado_por_caso = pagos_tipo_df.groupby("Caso")["Monto"].sum().to_dict()
     remaining = {k: float(v) for k, v in pagado_por_caso.items()}
 
-    pagado_asignado = []
-    saldo_cuota = []
-    estado = []
-    dias = []
-
+    pagado_asignado, saldo_cuota, estado, dias = [], [], [], []
     for _, r in df.iterrows():
         caso = r["Caso"]
         monto = float(r["Monto"])
@@ -263,22 +273,17 @@ def allocate_payments_oldest_first(cuotas_tipo_df: pd.DataFrame, pagos_tipo_df: 
     df["SaldoCuota"] = saldo_cuota
     df["Estado"] = estado
     df["DiasParaVencimiento"] = dias
-
     df.drop(columns=["_sort_date"], inplace=True, errors="ignore")
     return df
 
 def cuotas_status_all():
     if cuotas.empty:
         return pd.DataFrame()
-
     q_h = cuotas[cuotas["Tipo"] == "Honorarios"].copy()
     q_l = cuotas[cuotas["Tipo"] == "CuotaLitis"].copy()
-
     st_h = allocate_payments_oldest_first(q_h, pagos_honorarios)
     st_l = allocate_payments_oldest_first(q_l, pagos_litis)
-
-    out = pd.concat([st_h, st_l], ignore_index=True) if (not st_h.empty or not st_l.empty) else pd.DataFrame()
-    return out
+    return pd.concat([st_h, st_l], ignore_index=True) if (not st_h.empty or not st_l.empty) else pd.DataFrame()
 
 def cuotas_pendientes(df_status: pd.DataFrame):
     if df_status.empty:
@@ -295,10 +300,10 @@ if menu == "Dashboard":
     df_status = cuotas_status_all()
     df_pend = cuotas_pendientes(df_status)
 
-    # Totales saldo total
     total_pactado = df_res["Honorario Pactado"].sum() if not df_res.empty else 0
     total_pagado_h = df_res["Honorario Pagado"].sum() if not df_res.empty else 0
     total_pend_h = df_res["Honorario Pendiente"].sum() if not df_res.empty else 0
+
     total_litis = df_res["Cuota Litis Calculada"].sum() if not df_res.empty else 0
     total_pagado_l = df_res["Pagado Litis"].sum() if not df_res.empty else 0
     total_pend_l = df_res["Saldo Litis"].sum() if not df_res.empty else 0
@@ -317,7 +322,6 @@ if menu == "Dashboard":
     st.divider()
 
     st.subheader("📅 Indicadores por Cronograma (Cuotas)")
-    today = date.today()
     vencidas = pd.DataFrame()
     por_vencer = pd.DataFrame()
 
@@ -354,7 +358,7 @@ if menu == "Dashboard":
         st.dataframe(por_vencer[["Caso","Tipo","NroCuota","FechaVenc","Monto","PagadoAsignado","SaldoCuota","Estado","DiasParaVencimiento"]], use_container_width=True)
 
 # =========================
-# CLIENTES (CRUD)  ✅ (CORREGIDO)
+# CLIENTES (CRUD)
 # =========================
 if menu == "Clientes":
     st.title("Clientes")
@@ -372,7 +376,7 @@ if menu == "Clientes":
 
             if submit:
                 new_id = next_id(clientes)
-                nueva_fila = {
+                clientes = add_row(clientes, {
                     "ID": new_id,
                     "Nombre": nombre,
                     "DNI": dni,
@@ -380,8 +384,7 @@ if menu == "Clientes":
                     "Correo": correo,
                     "Direccion": direccion,
                     "Observaciones": obs
-                }
-                clientes = add_row(clientes, nueva_fila, "clientes")
+                }, "clientes")
                 save_df("clientes", clientes)
                 st.success("✅ Cliente registrado")
                 st.rerun()
@@ -446,7 +449,7 @@ if menu == "Abogados":
 
             if submit:
                 new_id = next_id(abogados)
-                nueva_fila = {
+                abogados = add_row(abogados, {
                     "ID": new_id,
                     "Nombre": nombre,
                     "DNI": dni,
@@ -456,8 +459,7 @@ if menu == "Abogados":
                     "Domicilio Procesal": dom,
                     "Casilla Electronica": cas_e,
                     "Casilla Judicial": cas_j
-                }
-                abogados = add_row(abogados, nueva_fila, "abogados")
+                }, "abogados")
                 save_df("abogados", abogados)
                 st.success("✅ Abogado registrado")
                 st.rerun()
@@ -526,7 +528,7 @@ if menu == "Casos":
 
             if submit:
                 new_id = next_id(casos)
-                nueva_fila = {
+                casos = add_row(casos, {
                     "ID": new_id,
                     "Cliente": cliente,
                     "Abogado": abogado,
@@ -535,8 +537,7 @@ if menu == "Casos":
                     "Materia": materia,
                     "Pretension": pretension,
                     "Observaciones": obs
-                }
-                casos = add_row(casos, nueva_fila, "casos")
+                }, "casos")
                 save_df("casos", casos)
                 st.success("✅ Caso registrado")
                 st.rerun()
@@ -605,7 +606,7 @@ if menu == "Honorarios":
     st.dataframe(honorarios, use_container_width=True)
 
 # =========================
-# PAGOS HONORARIOS (con editar/eliminar)
+# PAGOS HONORARIOS
 # =========================
 if menu == "Pagos Honorarios":
     st.title("Pagos de Honorarios")
@@ -629,16 +630,15 @@ if menu == "Pagos Honorarios":
 
         st.divider()
         st.subheader("Editar / Eliminar pago")
-        if pagos_honorarios.empty:
-            st.info("Aún no hay pagos.")
-        else:
+        if not pagos_honorarios.empty:
             sel = st.selectbox("Selecciona pago por ID", pagos_honorarios["ID"].tolist())
             fila = pagos_honorarios[pagos_honorarios["ID"] == sel].iloc[0]
 
             with st.form("edit_pago_h"):
                 caso_e = st.text_input("Caso", value=str(fila["Caso"]))
                 fecha_e = st.text_input("Fecha (YYYY-MM-DD)", value=str(fila["FechaPago"]))
-                monto_e = st.number_input("Monto", min_value=0.0, value=float(pd.to_numeric(fila["Monto"], errors="coerce") or 0), step=50.0)
+                monto_e = st.number_input("Monto", min_value=0.0,
+                                          value=float(pd.to_numeric(fila["Monto"], errors="coerce") or 0), step=50.0)
                 obs_e = st.text_input("Observación", value=str(fila["Observacion"]))
                 guardar = st.form_submit_button("Guardar cambios")
 
@@ -680,7 +680,7 @@ if menu == "Cuota Litis":
     st.dataframe(cuota_litis, use_container_width=True)
 
 # =========================
-# PAGOS CUOTA LITIS (editar/eliminar)
+# PAGOS CUOTA LITIS
 # =========================
 if menu == "Pagos Cuota Litis":
     st.title("Pagos Cuota Litis")
@@ -704,16 +704,15 @@ if menu == "Pagos Cuota Litis":
 
         st.divider()
         st.subheader("Editar / Eliminar pago")
-        if pagos_litis.empty:
-            st.info("Aún no hay pagos litis.")
-        else:
+        if not pagos_litis.empty:
             sel = st.selectbox("Selecciona pago litis por ID", pagos_litis["ID"].tolist())
             fila = pagos_litis[pagos_litis["ID"] == sel].iloc[0]
 
             with st.form("edit_pago_l"):
                 caso_e = st.text_input("Caso", value=str(fila["Caso"]))
                 fecha_e = st.text_input("Fecha (YYYY-MM-DD)", value=str(fila["FechaPago"]))
-                monto_e = st.number_input("Monto", min_value=0.0, value=float(pd.to_numeric(fila["Monto"], errors="coerce") or 0), step=50.0)
+                monto_e = st.number_input("Monto", min_value=0.0,
+                                          value=float(pd.to_numeric(fila["Monto"], errors="coerce") or 0), step=50.0)
                 obs_e = st.text_input("Observación", value=str(fila["Observacion"]))
                 guardar = st.form_submit_button("Guardar cambios")
 
@@ -768,7 +767,7 @@ if menu == "Cronograma de Cuotas":
             st.rerun()
 
     st.divider()
-    st.subheader("Estado de cuotas (pagos aplicados automáticamente: más antigua primero)")
+    st.subheader("Estado de cuotas (pagos aplicados automáticamente)")
     df_status = cuotas_status_all()
     if df_status.empty:
         st.info("Aún no hay cuotas registradas.")
@@ -777,9 +776,7 @@ if menu == "Cronograma de Cuotas":
 
     st.divider()
     st.subheader("Eliminar cuota")
-    if cuotas.empty:
-        st.info("No hay cuotas para eliminar.")
-    else:
+    if not cuotas.empty:
         sel_id = st.selectbox("Selecciona cuota (ID) a eliminar", cuotas["ID"].tolist())
         if st.button("Eliminar cuota"):
             cuotas = cuotas[cuotas["ID"] != sel_id].copy()
