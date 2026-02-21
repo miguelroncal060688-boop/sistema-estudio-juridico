@@ -1978,3 +1978,218 @@ def listar_instancias_caso(caso_id):
         ]],
         use_container_width=True
     )
+# ============================================================
+# ================== 🧩 EXTENSIONES (A+B) =====================
+# Pegable al final. No modifica lo existente.
+# ============================================================
+
+# --- Archivos extra (no rompen tu estructura actual) ---
+ABOGADOS_EXTRA_FILE = "abogados_extra.csv"
+CASOS_EXTRA_FILE = "casos_extra.csv"
+ABOGADO_NOTAS_FILE = "abogado_notas.csv"
+
+def _ensure_csv_extra(path, cols):
+    if not os.path.exists(path):
+        pd.DataFrame(columns=cols).to_csv(path, index=False)
+        return
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        df = pd.DataFrame(columns=cols)
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+    df = df.reindex(columns=cols)
+    df.to_csv(path, index=False)
+
+_ensure_csv_extra(ABOGADOS_EXTRA_FILE, ["AbogadoID", "ColegioProfesional", "DistritoJudicial", "ReferenciaDomicilio"])
+_ensure_csv_extra(CASOS_EXTRA_FILE, ["Expediente", "Juzgado", "DistritoJudicial", "Contraparte", "ContraparteDoc"])
+_ensure_csv_extra(ABOGADO_NOTAS_FILE, ["AbogadoID", "Notas"])
+
+def load_abogados_extra():
+    _ensure_csv_extra(ABOGADOS_EXTRA_FILE, ["AbogadoID", "ColegioProfesional", "DistritoJudicial", "ReferenciaDomicilio"])
+    return pd.read_csv(ABOGADOS_EXTRA_FILE)
+
+def save_abogados_extra(df):
+    df.to_csv(ABOGADOS_EXTRA_FILE, index=False)
+
+def load_casos_extra():
+    _ensure_csv_extra(CASOS_EXTRA_FILE, ["Expediente", "Juzgado", "DistritoJudicial", "Contraparte", "ContraparteDoc"])
+    return pd.read_csv(CASOS_EXTRA_FILE)
+
+def save_casos_extra(df):
+    df.to_csv(CASOS_EXTRA_FILE, index=False)
+
+def load_abogado_notas():
+    _ensure_csv_extra(ABOGADO_NOTAS_FILE, ["AbogadoID", "Notas"])
+    return pd.read_csv(ABOGADO_NOTAS_FILE)
+
+def save_abogado_notas(df):
+    df.to_csv(ABOGADO_NOTAS_FILE, index=False)
+
+def _get_row_or_default(df, key_col, key_val, defaults: dict):
+    row = df[df[key_col].astype(str) == str(key_val)]
+    if row.empty:
+        return defaults.copy()
+    out = defaults.copy()
+    for k in defaults:
+        out[k] = row.iloc[0].get(k, defaults[k])
+    return out
+
+def _upsert(df, key_col, key_val, values: dict):
+    key_val = str(key_val)
+    idx = df.index[df[key_col].astype(str) == key_val].tolist()
+    if not idx:
+        new = {key_col: key_val}
+        new.update(values)
+        df = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
+        return df
+    i = idx[0]
+    for k, v in values.items():
+        df.at[i, k] = v
+    return df
+
+# =========================
+# UI: Panel de Extensiones
+# =========================
+with st.sidebar.expander("🧩 Extensiones (A+B)", expanded=False):
+    # Menú sin escritura: radio (mejor en móvil)
+    ext_view = st.radio(
+        "Ir a:",
+        ["(ninguno)", "Abogados (extendido)", "Casos (extendido)", "Instancias por caso"],
+        index=0
+    )
+
+# =========================
+# Vista: Abogados extendido
+# =========================
+if ext_view == "Abogados (extendido)":
+    st.subheader("🧩 Abogados (extendido) — Colegio / Distrito / Referencia + Notas")
+
+    if 'abogados' not in globals() or abogados.empty:
+        st.info("No hay abogados registrados aún.")
+    else:
+        ab_id = st.selectbox("Selecciona Abogado ID", abogados["ID"].tolist())
+        base = abogados[abogados["ID"] == ab_id].iloc[0].to_dict()
+
+        st.markdown("### Datos base (solo lectura)")
+        st.write({k: base.get(k, "") for k in ["ID","Nombre","DNI","Celular","Correo","Colegiatura","Domicilio Procesal","Casilla Electronica","Casilla Judicial"]})
+
+        extra_df = load_abogados_extra()
+        extra = _get_row_or_default(
+            extra_df, "AbogadoID", ab_id,
+            {"ColegioProfesional":"", "DistritoJudicial":"", "ReferenciaDomicilio":""}
+        )
+
+        st.markdown("### Campos adicionales (nuevo)")
+        col = st.text_input("Colegio Profesional (texto libre)", value=str(extra["ColegioProfesional"]))
+        dist = st.text_input("Distrito Judicial (texto libre)", value=str(extra["DistritoJudicial"]))
+        ref = st.text_input("Referencia del Domicilio Procesal", value=str(extra["ReferenciaDomicilio"]))
+
+        notas_df = load_abogado_notas()
+        notas = _get_row_or_default(notas_df, "AbogadoID", ab_id, {"Notas":""})["Notas"]
+        notas_new = st.text_area("Notas del abogado", value=str(notas), height=160)
+
+        if st.button("💾 Guardar datos extendidos del abogado"):
+            extra_df2 = _upsert(extra_df, "AbogadoID", ab_id, {
+                "ColegioProfesional": col,
+                "DistritoJudicial": dist,
+                "ReferenciaDomicilio": ref
+            })
+            save_abogados_extra(extra_df2)
+
+            notas_df2 = _upsert(notas_df, "AbogadoID", ab_id, {
+                "Notas": notas_new
+            })
+            save_abogado_notas(notas_df2)
+
+            st.success("✅ Guardado. (Datos extendidos en abogados_extra.csv y abogado_notas.csv)")
+
+# ======================
+# Vista: Casos extendido
+# ======================
+if ext_view == "Casos (extendido)":
+    st.subheader("🧩 Casos (extendido) — Juzgado / Distrito / Contraparte")
+
+    if 'casos' not in globals() or casos.empty:
+        st.info("No hay casos registrados aún.")
+    else:
+        exp = st.selectbox("Selecciona Expediente", casos["Expediente"].tolist())
+        base = casos[casos["Expediente"] == exp].iloc[0].to_dict()
+
+        st.markdown("### Datos base (solo lectura)")
+        st.write({k: base.get(k, "") for k in ["ID","Cliente","Abogado","Expediente","Año","Materia","Instancia","Pretension","EstadoCaso","FechaInicio"]})
+
+        extra_df = load_casos_extra()
+        extra = _get_row_or_default(
+            extra_df, "Expediente", exp,
+            {"Juzgado":"", "DistritoJudicial":"", "Contraparte":"", "ContraparteDoc":""}
+        )
+
+        st.markdown("### Campos adicionales (nuevo)")
+        juz = st.text_input("Juzgado", value=str(extra["Juzgado"]))
+        dist = st.text_input("Distrito Judicial", value=str(extra["DistritoJudicial"]))
+        cont = st.text_input("Contraparte", value=str(extra["Contraparte"]))
+        contdoc = st.text_input("DNI/RUC Contraparte", value=str(extra["ContraparteDoc"]))
+
+        if st.button("💾 Guardar datos extendidos del caso"):
+            extra_df2 = _upsert(extra_df, "Expediente", exp, {
+                "Juzgado": juz,
+                "DistritoJudicial": dist,
+                "Contraparte": cont,
+                "ContraparteDoc": contdoc
+            })
+            save_casos_extra(extra_df2)
+            st.success("✅ Guardado en casos_extra.csv")
+
+# =========================
+# Vista: Instancias por caso
+# =========================
+# Usa instancias.csv del Bloque B previo (si existe). Si no existe, lo crea.
+INSTANCIAS_FILE = "instancias.csv"
+_ensure_csv_extra(INSTANCIAS_FILE, ["ID","Expediente","TipoInstancia","EstadoActual","Resultado","Accion","Honorarios"])
+
+def load_instancias_ext():
+    _ensure_csv_extra(INSTANCIAS_FILE, ["ID","Expediente","TipoInstancia","EstadoActual","Resultado","Accion","Honorarios"])
+    return pd.read_csv(INSTANCIAS_FILE)
+
+def save_instancias_ext(df):
+    df.to_csv(INSTANCIAS_FILE, index=False)
+
+def next_id_simple(df, col="ID"):
+    if df.empty:
+        return 1
+    m = pd.to_numeric(df[col], errors="coerce").max()
+    return int(m) + 1 if pd.notna(m) else len(df) + 1
+
+if ext_view == "Instancias por caso":
+    st.subheader("🧩 Instancias por Caso — Estado / Resultado / Acción / Honorarios")
+
+    if 'casos' not in globals() or casos.empty:
+        st.info("No hay casos registrados aún.")
+    else:
+        exp = st.selectbox("Selecciona Expediente", casos["Expediente"].tolist(), key="inst_exp_sel")
+
+        df_i = load_instancias_ext()
+        sub = df_i[df_i["Expediente"].astype(str) == str(exp)].copy()
+
+        st.markdown("### Instancias registradas")
+        if sub.empty:
+            st.info("Aún no hay instancias para este caso.")
+        else:
+            st.dataframe(sub.sort_values("ID", ascending=False), use_container_width=True)
+
+        st.divider()
+        st.markdown("### Registrar nueva instancia")
+        tipo = st.selectbox("Tipo de instancia", ["Actuación Administrativa", "Primera Instancia", "Segunda Instancia", "Casación", "Otros"])
+        estado = st.text_input("Estado actual")
+        resultado = st.text_input("Resultado")
+        accion = st.text_input("Acción")
+        honor = st.number_input("Honorarios por instancia (S/)", min_value=0.0, step=100.0)
+
+        if st.button("💾 Guardar instancia"):
+            new_id = next_id_simple(df_i, "ID")
+            df_i.loc[len(df_i)] = [new_id, exp, tipo, estado, resultado, accion, float(honor)]
+            save_instancias_ext(df_i)
+            st.success("✅ Instancia guardada en instancias.csv")
+            st.rerun()
