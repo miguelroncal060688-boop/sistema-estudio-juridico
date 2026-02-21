@@ -1511,56 +1511,172 @@ if menu == "Pagos Cuota Litis":
     st.download_button("⬇️ Descargar pagos litis (CSV)", pagos_litis.to_csv(index=False).encode("utf-8"), "pagos_litis.csv")
 
 # ==========================================================
-# CRONOGRAMA DE CUOTAS (blindado/restablecido)
+# CRONOGRAMA DE CUOTAS (EDITAR / BORRAR / MARCAR PAGADA)
+# - No cambia esquemas
+# - "Marcar pagada" crea un pago real (honorarios o litis)
 # ==========================================================
 if menu == "Cronograma de Cuotas":
     st.subheader("📅 Cronograma de cuotas")
 
+    is_readonly = st.session_state.get("rol") == "asistente"
+
     st.markdown("### Cuotas registradas")
-    st.dataframe(cuotas.sort_values("FechaVenc", ascending=False), use_container_width=True)
+    st.dataframe(cuotas.sort_values(["Caso","Tipo","NroCuota"], ascending=[True, True, True]), use_container_width=True)
 
     exp_list = casos["Expediente"].tolist()
     if not exp_list:
         st.warning("Primero registra casos para poder crear cuotas.")
     else:
-        st.markdown("### Crear cuota")
-        caso = st.selectbox("Expediente", exp_list, key="cr_caso")
-        tipo = st.selectbox("Tipo", TIPOS_CUOTA, key="cr_tipo")
-        venc = st.date_input("Fecha vencimiento", value=date.today(), key="cr_venc")
-        monto = st.number_input("Monto cuota", min_value=0.0, step=50.0, key="cr_monto")
-        notas = st.text_input("Notas", value="", key="cr_notas")
+        # ==========================================================
+        # CREAR CUOTA
+        # ==========================================================
+        st.divider()
+        st.markdown("### ➕ Crear cuota")
 
-        caso = normalize_key(caso)
-        tipo = "Honorarios" if tipo == "Honorarios" else "CuotaLitis"
+        caso_new = st.selectbox("Expediente", exp_list, key="cr_caso_new")
+        tipo_new = st.selectbox("Tipo", TIPOS_CUOTA, key="cr_tipo_new")
+        venc_new = st.date_input("Fecha vencimiento", value=date.today(), key="cr_venc_new")
+        monto_new = st.number_input("Monto cuota", min_value=0.0, step=50.0, key="cr_monto_new")
+        notas_new = st.text_input("Notas", value="", key="cr_notas_new")
 
-        sub = cuotas[(cuotas["Caso"] == caso) & (cuotas["Tipo"] == tipo)].copy()
+        caso_norm = normalize_key(caso_new)
+        tipo_norm = "Honorarios" if str(tipo_new) == "Honorarios" else "CuotaLitis"
+
+        sub = cuotas[(cuotas["Caso"] == caso_norm) & (cuotas["Tipo"] == tipo_norm)].copy()
         sub["NroCuota"] = pd.to_numeric(sub["NroCuota"], errors="coerce").fillna(0).astype(int)
         nro = int(sub["NroCuota"].max()) + 1 if not sub.empty else 1
 
-        if st.button("Guardar cuota", key="cr_save"):
+        if st.button("Guardar cuota", disabled=is_readonly, key="cr_save_new"):
             new_id = next_id(cuotas)
             cuotas = add_row(cuotas, {
                 "ID": new_id,
-                "Caso": caso,
-                "Tipo": tipo,
+                "Caso": caso_norm,
+                "Tipo": tipo_norm,
                 "NroCuota": nro,
-                "FechaVenc": str(venc),
-                "Monto": float(monto),
-                "Notas": notas
+                "FechaVenc": str(venc_new),
+                "Monto": float(monto_new),
+                "Notas": notas_new
             }, "cuotas")
             save_df("cuotas", cuotas)
             st.success("✅ Cuota creada")
             st.rerun()
 
-    st.divider()
-    st.markdown("### Estado de cuotas (usa pagos existentes)")
-    estado = cuotas_status_all()
-    if estado.empty:
-        st.info("No hay cuotas o no hay estado aún.")
-    else:
-        st.dataframe(estado.sort_values(["Caso","Tipo","NroCuota"]), use_container_width=True)
+        # ==========================================================
+        # EDITAR / BORRAR CUOTA
+        # ==========================================================
+        st.divider()
+        st.markdown("### ✏️ Editar / borrar cuota (por ID)")
 
-    st.download_button("⬇️ Descargar cronograma (CSV)", cuotas.to_csv(index=False).encode("utf-8"), "cuotas.csv")
+        if cuotas.empty:
+            st.info("No hay cuotas registradas.")
+        else:
+            sel_id = st.selectbox("Cuota ID", cuotas["ID"].tolist(), key="cr_sel_id")
+            fila = cuotas[cuotas["ID"] == sel_id].iloc[0]
+
+            with st.form("cr_edit_form"):
+                caso_e = st.selectbox("Expediente", exp_list,
+                                      index=exp_list.index(fila["Caso"]) if fila["Caso"] in exp_list else 0,
+                                      key="cr_edit_caso")
+                tipo_e = st.selectbox("Tipo", ["Honorarios","CuotaLitis"],
+                                      index=0 if str(fila["Tipo"]) == "Honorarios" else 1,
+                                      key="cr_edit_tipo")
+                nro_e = st.number_input("NroCuota", min_value=1, step=1,
+                                        value=int(pd.to_numeric(fila["NroCuota"], errors="coerce") or 1),
+                                        key="cr_edit_nro")
+                venc_e = st.text_input("FechaVenc (YYYY-MM-DD)", value=str(fila["FechaVenc"]), key="cr_edit_venc")
+                monto_e = st.number_input("Monto", min_value=0.0, step=50.0,
+                                          value=float(pd.to_numeric(fila["Monto"], errors="coerce") or 0),
+                                          key="cr_edit_monto")
+                notas_e = st.text_input("Notas", value=str(fila.get("Notas","")), key="cr_edit_notas")
+
+                submit = st.form_submit_button("Guardar cambios", disabled=is_readonly)
+
+            if submit:
+                idx = cuotas.index[cuotas["ID"] == sel_id][0]
+                cuotas.loc[idx, ["Caso","Tipo","NroCuota","FechaVenc","Monto","Notas"]] = [
+                    normalize_key(caso_e),
+                    "Honorarios" if str(tipo_e) == "Honorarios" else "CuotaLitis",
+                    int(nro_e),
+                    str(venc_e),
+                    float(monto_e),
+                    notas_e
+                ]
+                save_df("cuotas", cuotas)
+                st.success("✅ Cuota actualizada")
+                st.rerun()
+
+            st.warning("⚠️ Eliminar cuota (irreversible)")
+            confirm_del = st.text_input("Escribe ELIMINAR para confirmar", key="cr_del_confirm")
+            if st.button("🗑️ Eliminar cuota", disabled=is_readonly or confirm_del.strip().upper() != "ELIMINAR", key="cr_del_btn"):
+                cuotas = cuotas[cuotas["ID"] != sel_id].copy()
+                save_df("cuotas", cuotas)
+                st.success("✅ Cuota eliminada")
+                st.rerun()
+
+        # ==========================================================
+        # MARCAR CUOTA COMO PAGADA (CREA PAGO REAL)
+        # ==========================================================
+        st.divider()
+        st.markdown("### ✅ Marcar cuota como pagada (crea un pago real)")
+
+        st.caption("Esto NO cambia un 'flag' en cuotas; crea un pago en Pagos Honorarios o Pagos Cuota Litis para que el sistema lo reconozca.")
+        st.caption("Para revertir, elimina ese pago en el módulo correspondiente.")
+
+        if cuotas.empty:
+            st.info("No hay cuotas para marcar.")
+        else:
+            sel_pay = st.selectbox("Selecciona Cuota ID", cuotas["ID"].tolist(), key="cr_pay_sel")
+            f = cuotas[cuotas["ID"] == sel_pay].iloc[0]
+            tipo_pago = str(f["Tipo"])
+            caso_pago = str(f["Caso"])
+            monto_pago = float(pd.to_numeric(f["Monto"], errors="coerce") or 0.0)
+
+            colA, colB = st.columns([1,2])
+            with colA:
+                fecha_pago = st.date_input("Fecha del pago", value=date.today(), key="cr_pay_fecha")
+            with colB:
+                obs_pago = st.text_input("Observación", value=f"Pago manual por cuota ID {sel_pay}", key="cr_pay_obs")
+
+            if st.button("💳 Registrar pago equivalente", disabled=is_readonly or monto_pago <= 0, key="cr_pay_btn"):
+                if tipo_pago == "Honorarios":
+                    new_id = next_id(pagos_honorarios)
+                    pagos_honorarios = add_row(pagos_honorarios, {
+                        "ID": new_id,
+                        "Caso": normalize_key(caso_pago),
+                        "Etapa": "",  # opcional: si quieres asociarlo a una etapa, lo puedes editar luego
+                        "FechaPago": str(fecha_pago),
+                        "Monto": float(monto_pago),
+                        "Observacion": obs_pago
+                    }, "pagos_honorarios")
+                    save_df("pagos_honorarios", pagos_honorarios)
+                    st.success("✅ Pago de honorarios creado (afecta dashboard y estado de cuotas)")
+                    st.rerun()
+
+                else:  # CuotaLitis
+                    new_id = next_id(pagos_litis)
+                    pagos_litis = add_row(pagos_litis, {
+                        "ID": new_id,
+                        "Caso": normalize_key(caso_pago),
+                        "FechaPago": str(fecha_pago),
+                        "Monto": float(monto_pago),
+                        "Observacion": obs_pago
+                    }, "pagos_litis")
+                    save_df("pagos_litis", pagos_litis)
+                    st.success("✅ Pago de litis creado (afecta dashboard y estado de cuotas)")
+                    st.rerun()
+
+        # ==========================================================
+        # ESTADO DE CUOTAS
+        # ==========================================================
+        st.divider()
+        st.markdown("### Estado de cuotas (usa pagos existentes)")
+        estado = cuotas_status_all()
+        if estado is None or estado.empty:
+            st.info("No hay cuotas o no hay estado aún.")
+        else:
+            st.dataframe(estado.sort_values(["Caso","Tipo","NroCuota"], ascending=[True,True,True]), use_container_width=True)
+
+        st.download_button("⬇️ Descargar cronograma (CSV)", cuotas.to_csv(index=False).encode("utf-8"), "cuotas.csv", key="cr_dl_csv")
 
 # ==========================================================
 # ACTUACIONES (FICHA por caso/cliente + historial desplegable + reporte)
