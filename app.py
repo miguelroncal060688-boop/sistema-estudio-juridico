@@ -269,7 +269,7 @@ usuarios = load_df("usuarios")
 if usuarios[usuarios["Usuario"].astype(str) == "admin"].empty:
     usuarios = add_row(usuarios, {
         "Usuario": "admin",
-        "PasswordHash": sha256("estudio123"),
+        "PasswordHash": sha256(st.secrets.get("ADMIN_BOOTSTRAP_PASSWORD", "estudio123")),
         "Rol": "admin",
         "AbogadoID": "",
         "Activo": "1",
@@ -291,8 +291,8 @@ def login_ui():
     brand_header()
     st.subheader("Ingreso al Sistema")
 
-    u = st.text_input("Usuario", value="admin")
-    p = st.text_input("Contraseña", type="password", value="estudio123")
+    u = st.text_input("Usuario", value=""
+    p = st.text_input("Contraseña", type="password", value="")
 
     if st.button("Ingresar"):
         users = load_df("usuarios")
@@ -503,7 +503,7 @@ def reset_total(borrar_archivos=False):
     users = pd.DataFrame(columns=SCHEMAS["usuarios"])
     users = pd.concat([users, pd.DataFrame([{
         "Usuario":"admin",
-        "PasswordHash": sha256("estudio123"),
+        "PasswordHash": sha256(st.secrets.get("ADMIN_BOOTSTRAP_PASSWORD", "estudio123")),
         "Rol":"admin",
         "AbogadoID":"",
         "Activo":"1",
