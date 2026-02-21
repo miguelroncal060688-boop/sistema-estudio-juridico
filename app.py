@@ -1791,3 +1791,75 @@ except Exception:
     pass
 
 # =================== FIN PARCHE MARCA 004 ==================
+# ============================================================
+# UX EXTENSION A1: MENÚ SOLO DESPLEGABLE (ANTI-TECLADO MÓVIL)
+# ============================================================
+
+def menu_select_only(label, options, key=None):
+    """
+    Menú desplegable sin posibilidad de escritura.
+    Ideal para móviles (evita abrir teclado).
+    """
+    return st.selectbox(
+        label,
+        options,
+        index=0,
+        key=key
+    )
+# ============================================================
+# UX EXTENSION A2–A4: CAMPOS ADICIONALES PROFESIONALES
+# ============================================================
+
+def abogado_campos_adicionales(data=None):
+    """
+    Campos extra para abogado:
+    - Colegio profesional (texto libre)
+    """
+    st.subheader("Datos Profesionales Adicionales")
+    colegio = st.text_input(
+        "Colegio Profesional",
+        value=(data or {}).get("ColegioProfesional", "")
+    )
+    return {"ColegioProfesional": colegio}
+
+
+def domicilio_campos_adicionales(data=None):
+    """
+    Campos extra para notificaciones procesales:
+    - Distrito Judicial
+    - Referencia de domicilio procesal
+    """
+    st.subheader("Datos Procesales Adicionales")
+    distrito = st.text_input(
+        "Distrito Judicial",
+        value=(data or {}).get("DistritoJudicial", "")
+    )
+    referencia = st.text_input(
+        "Referencia del Domicilio Procesal",
+        value=(data or {}).get("ReferenciaDomicilio", "")
+    )
+    return {
+        "DistritoJudicial": distrito,
+        "ReferenciaDomicilio": referencia
+    }
+# ============================================================
+# UX EXTENSION A5: NOTAS DEL ABOGADO
+# ============================================================
+
+def notas_abogado():
+    """
+    Notas privadas del abogado logueado.
+    No se muestran a clientes ni asistentes.
+    """
+    st.subheader("📝 Notas del Abogado")
+
+    key = f"notas_abogado_{st.session_state.get('usuario', 'anon')}"
+    if key not in st.session_state:
+        st.session_state[key] = ""
+
+    st.session_state[key] = st.text_area(
+        "Notas internas",
+        value=st.session_state[key],
+        height=150,
+        placeholder="Escribe aquí observaciones, criterios, recordatorios..."
+    )
