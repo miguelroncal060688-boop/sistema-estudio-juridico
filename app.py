@@ -1383,15 +1383,51 @@ if menu == "Plantillas de Contrato":
 
     
     st.info(
-        "Placeholders disponibles:\n\n"
-        "🔹 Básicos:\n"
-        "  {{EXPEDIENTE}}, {{FECHA_HOY}}\n\n"
-        "🔹 Caso (todas las columnas de casos.csv):\n"
-        "  {{CASO_<COLUMNA>}}  (ej: {{CASO_JUZGADO}}, {{CASO_CONTRAPARTE}}, {{CASO_DISTRITOJUDICIAL}})\n\n"
-        "🔹 Cliente (todas las columnas de clientes.csv):\n"
-        "  {{CLIENTE_<COLUMNA>}}  (ej: {{CLIENTE_RUC}}, {{CLIENTE_RAZONSOCIAL}}, {{CLIENTE_REPRESENTANTELEGAL}})\n\n"
-        "🔹 Abogado (todas las columnas de abogados.csv):\n"
-        "  {{ABOGADO_<COLUMNA>}}  (ej: {{ABOGADO_COLEGIOPROFESIONAL}}, {{ABOGADO_DISTRITOJUDICIAL}})"
+       
+        "📌 **CÓDIGOS DISPONIBLES PARA CONTRATOS**\n\n"
+    
+        "🔹 **BÁSICOS**\n"
+        "  {{EXPEDIENTE}}\n"
+        "  {{FECHA_HOY}}\n\n"
+    
+        "🔹 **CASO (datos del expediente)**\n"
+        "  {{CASO_EXPEDIENTE}}\n"
+        "  {{CASO_CLIENTE}}\n"
+        "  {{CASO_ABOGADO}}\n"
+        "  {{CASO_MATERIA}}\n"
+        "  {{CASO_INSTANCIA}}\n"
+        "  {{CASO_PRETENSION}}\n\n"
+    
+        "🔹 **CLIENTE (persona natural / jurídica)**\n"
+        "  {{CLIENTE_NOMBRE}}\n"
+        "  {{CLIENTE_DNI}}\n"
+        "  {{CLIENTE_CELULAR}}\n"
+        "  {{CLIENTE_CORREO}}\n"
+        "  {{CLIENTE_DIRECCION}}\n\n"
+    
+        "🔹 **ABOGADO**\n"
+        "  {{ABOGADO_NOMBRE}}\n"
+        "  {{ABOGADO_DNI}}\n"
+        "  {{ABOGADO_CELULAR}}\n"
+        "  {{ABOGADO_CORREO}}\n"
+        "  {{ABOGADO_COLEGIATURA}}\n"
+        "  {{ABOGADO_DOMICILIO PROCESAL}}\n"
+        "  {{ABOGADO_CASILLA ELECTRONICA}}\n"
+        "  {{ABOGADO_CASILLA JUDICIAL}}\n\n"
+    
+        "🔹 **ECONÓMICOS – HONORARIOS**\n"
+        "  {{MONTO_PACTADO}}               → Total de honorarios del caso\n"
+        "  {{HONORARIO_PRIMERA_INSTANCIA}} → Honorario por Primera Instancia\n"
+        "  {{HONORARIO_SEGUNDA_INSTANCIA}} → Honorario por Segunda Instancia\n"
+        "  {{HONORARIO_CASACION}}          → Honorario por Casación\n"
+        "  {{HONORARIO_OTROS}}             → Otros honorarios\n\n"
+    
+        "🔹 **ECONÓMICOS – CUOTA LITIS**\n"
+        "  {{CUOTA_LITIS_BASE}}            → Monto base de la cuota litis\n"
+        "  {{CUOTA_LITIS_PORCENTAJE}}      → Porcentaje pactado\n\n"
+    
+        "🔹 **ECONÓMICOS – CRONOGRAMA DE PAGOS**\n"
+        "  {{CRONOGRAMA_PAGOS}}            → Detalle completo de cuotas\n"
 )
 
 
