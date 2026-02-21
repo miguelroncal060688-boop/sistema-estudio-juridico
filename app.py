@@ -1381,7 +1381,19 @@ if menu == "Plantillas de Contrato":
     st.subheader("📝 Plantillas de Contrato (Modelos)")
     accion = st.radio("Acción", ["Nueva","Editar","Eliminar"], horizontal=True)
 
-    st.info("Placeholders: {{EXPEDIENTE}}, {{CLIENTE_NOMBRE}}, {{CLIENTE_DNI}}, {{MATERIA}}, {{INSTANCIA}}, {{MONTO_PACTADO}}, {{PORCENTAJE_LITIS}}, {{FECHA_HOY}}")
+    
+    st.info(
+        "Placeholders disponibles:\n\n"
+        "🔹 Básicos:\n"
+        "  {{EXPEDIENTE}}, {{FECHA_HOY}}\n\n"
+        "🔹 Caso (todas las columnas de casos.csv):\n"
+        "  {{CASO_<COLUMNA>}}  (ej: {{CASO_JUZGADO}}, {{CASO_CONTRAPARTE}}, {{CASO_DISTRITOJUDICIAL}})\n\n"
+        "🔹 Cliente (todas las columnas de clientes.csv):\n"
+        "  {{CLIENTE_<COLUMNA>}}  (ej: {{CLIENTE_RUC}}, {{CLIENTE_RAZONSOCIAL}}, {{CLIENTE_REPRESENTANTELEGAL}})\n\n"
+        "🔹 Abogado (todas las columnas de abogados.csv):\n"
+        "  {{ABOGADO_<COLUMNA>}}  (ej: {{ABOGADO_COLEGIOPROFESIONAL}}, {{ABOGADO_DISTRITOJUDICIAL}})"
+)
+
 
     if accion == "Nueva":
         with st.form("tpl_new"):
