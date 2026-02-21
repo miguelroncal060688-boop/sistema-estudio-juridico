@@ -787,7 +787,46 @@ def _ensure_schema_cols(df: pd.DataFrame, key: str) -> pd.DataFrame:
         if col not in df.columns:
             df[col] = ""
     return df.reindex(columns=cols)
+# ==========================================================
+# FIX: ensure_csv debe existir ANTES de load_df
+# ==========================================================
+def ensure_csv(key: str):
+    path = FILES[key]
+    cols = SCHEMAS[key]
 
+    # si el archivo no existe, lo crea con columnas
+    if not os.path.exists(path):
+        pd.DataFrame(columns=cols).to_csv(path, index=False)
+        return
+
+    # si está vacío, lo re-crea
+    try:
+        if os.path.getsize(path) == 0:
+            pd.DataFrame(columns=cols).to_csv(path, index=False)
+            return
+    except OSError:
+        pass
+
+    # intenta leer, si falla crea estructura limpia
+    try:
+        df = pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        pd.DataFrame(columns=cols).to_csv(path, index=False)
+        return
+    except Exception:
+        df = pd.DataFrame(columns=cols)
+
+    # limpia columnas Unnamed
+    df = df.loc[:, ~df.columns.astype(str).str.contains(r"^Unnamed", case=False, na=False)]
+
+    # agrega columnas faltantes
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+
+    # reorden y guarda
+    df = df.reindex(columns=cols)
+    df.to_csv(path, index=False)
 def load_df(key: str) -> pd.DataFrame:
     ensure_csv(key)
     try:
