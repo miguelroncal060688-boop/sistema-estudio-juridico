@@ -5,6 +5,9 @@ import hashlib
 import shutil
 from datetime import date, datetime
 
+# --- FIX GLOBAL: asegurar que 'menu' exista antes de usarse ---
+menu = None
+
 # ==========================================================
 # MARCA 006 – SISTEMA INTEGRAL (CAMBIOS 1 AL 19)
 # Estudio Jurídico Roncal Liñan y Asociados
