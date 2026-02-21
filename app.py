@@ -83,7 +83,7 @@ SCHEMAS = {
     "cuotas": ["ID","Caso","Tipo","NroCuota","FechaVenc","Monto","Notas"],
 
     # ✅ ACTUACIONES: agrego Cliente y LinkOneDrive (sin romper datos antiguos)
-    "actuaciones": ["ID","Caso","Cliente","Fecha","TipoActuacion","Resumen","ProximaAccion","FechaProximaAccion","LinkOneDrive","CostasAranceles","Gastos","Notas"],
+    "actuaciones": ["ID","Caso","Cliente","Fecha","TipoActuacion","Resumen","ProximaAccion","FechaProximaAccion","LinkOneDrive","CostasAranceles","Gastos","Notas","GastosPagado],
 
     "documentos": ["ID","Caso","Tipo","NombreArchivo","Ruta","Fecha","Notas"],
     "plantillas": ["ID","Nombre","Contenido","Notas","Creado"],
