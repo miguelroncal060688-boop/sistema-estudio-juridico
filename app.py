@@ -1411,44 +1411,45 @@ if menu == "Plantillas de Contrato":
 # ==========================================================
 def build_context(expediente: str):
     expediente = normalize_key(expediente)
+    ctx = {}
+
+    # =========================
+    # CASO (todas las columnas)
+    # =========================
     caso_row = casos[casos["Expediente"] == expediente]
-    if caso_row.empty:
-        return {}
-    c = caso_row.iloc[0]
+    if not caso_row.empty:
+        caso = caso_row.iloc[0].to_dict()
+        for k, v in caso.items():
+            ctx[f"{{{{CASO_{str(k).upper()}}}}}"] = str(v)
 
-    cli_row = clientes[clientes["Nombre"] == c["Cliente"]]
-    cli = cli_row.iloc[0] if not cli_row.empty else None
+    # =========================
+    # CLIENTE (todas las columnas)
+    # =========================
+    if not caso_row.empty:
+        cliente_nombre = str(caso_row.iloc[0].get("Cliente",""))
+        cli_row = clientes[clientes["Nombre"].astype(str) == cliente_nombre]
+        if not cli_row.empty:
+            cli = cli_row.iloc[0].to_dict()
+            for k, v in cli.items():
+                ctx[f"{{{{CLIENTE_{str(k).upper()}}}}}"] = str(v)
 
-    canon_h = canon_last_by_case(honorarios, "Caso")
-    canon_cl = canon_last_by_case(cuota_litis, "Caso")
+    # =========================
+    # ABOGADO (todas las columnas)
+    # =========================
+    if not caso_row.empty:
+        abogado_nombre = str(caso_row.iloc[0].get("Abogado",""))
+        ab_row = abogados[abogados["Nombre"].astype(str) == abogado_nombre]
+        if not ab_row.empty:
+            ab = ab_row.iloc[0].to_dict()
+            for k, v in ab.items():
+                ctx[f"{{{{ABOGADO_{str(k).upper()}}}}}"] = str(v)
 
-    etapas_exp = honorarios_etapas[honorarios_etapas["Caso"] == expediente]
-    if not etapas_exp.empty:
-        monto_pactado = safe_float_series(etapas_exp["Monto Pactado"]).sum()
-    else:
-        monto_pactado = safe_float_series(canon_h[canon_h["Caso"] == expediente]["Monto Pactado"]).sum()
+    # =========================
+    # CAMPOS BÁSICOS
+    # =========================
+    ctx["{{EXPEDIENTE}}"] = expediente
+    ctx["{{FECHA_HOY}}"] = date.today().strftime("%Y-%m-%d")
 
-    porc = safe_float_series(canon_cl[canon_cl["Caso"] == expediente]["Porcentaje"])
-    porc_val = float(porc.iloc[-1]) if len(porc) else 0.0
-
-    ctx = {
-        "{{EXPEDIENTE}}": expediente,
-        "{{CLIENTE_NOMBRE}}": str(c.get("Cliente","")),
-        "{{ABOGADO_NOMBRE}}": str(c.get("Abogado","")),
-        "{{MATERIA}}": str(c.get("Materia","")),
-        "{{INSTANCIA}}": str(c.get("Instancia","")),
-        "{{PRETENSION}}": str(c.get("Pretension","")),
-        "{{MONTO_PACTADO}}": f"{monto_pactado:.2f}",
-        "{{PORCENTAJE_LITIS}}": f"{porc_val:.2f}",
-        "{{FECHA_HOY}}": date.today().strftime("%Y-%m-%d"),
-    }
-    if cli is not None:
-        ctx.update({
-            "{{CLIENTE_DNI}}": str(cli.get("DNI","")),
-            "{{CLIENTE_CELULAR}}": str(cli.get("Celular","")),
-            "{{CLIENTE_CORREO}}": str(cli.get("Correo","")),
-            "{{CLIENTE_DIRECCION}}": str(cli.get("Direccion","")),
-        })
     return ctx
 
 def render_template(text: str, ctx: dict) -> str:
