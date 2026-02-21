@@ -615,7 +615,7 @@ menu = st.sidebar.radio("📌 Menú", [
 brand_header()
 
 # ==========================================================
-# DASHBOARD COMPLETO (CORREGIDO Y ROBUSTO)
+# DASHBOARD COMPLETO (CORREGIDO + SUMA REAL DE CUOTAS LITIS)
 # ==========================================================
 if menu == "Dashboard":
 
@@ -626,22 +626,52 @@ if menu == "Dashboard":
     df_estado = cuotas_status_all()
 
     # =========================
+    # ✅ Recalcular CUOTA LITIS CALCULADA (SUMA REAL)
+    # =========================
+    try:
+        cuotas = load_df("cuotas")
+        if not cuotas.empty and "CasoID" in cuotas.columns and "Monto" in cuotas.columns:
+            cuotas["Monto"] = pd.to_numeric(cuotas["Monto"], errors="coerce").fillna(0)
+
+            # Suma de todas las cuotas por caso
+            litis_por_caso = (
+                cuotas.groupby("CasoID", as_index=False)["Monto"]
+                .sum()
+                .rename(columns={"Monto": "CuotaLitisTotal"})
+            )
+
+            # Merge con resumen financiero
+            if "CasoID" in df_res.columns:
+                df_res = df_res.merge(
+                    litis_por_caso,
+                    on="CasoID",
+                    how="left"
+                )
+                df_res["CuotaLitisTotal"] = df_res["CuotaLitisTotal"].fillna(0)
+            else:
+                df_res["CuotaLitisTotal"] = 0
+        else:
+            df_res["CuotaLitisTotal"] = 0
+    except Exception:
+        df_res["CuotaLitisTotal"] = 0
+
+    # =========================
     # Normalización defensiva
     # =========================
     if not df_res.empty:
         for col in [
             "Honorario Pactado",
             "Honorario Pagado",
-            "Honorario Pendiente",
-            "Cuota Litis Calculada",
             "Pagado Litis",
-            "Saldo Litis",
         ]:
             if col not in df_res.columns:
                 df_res[col] = 0
             df_res[col] = pd.to_numeric(df_res[col], errors="coerce").fillna(0)
 
-        # ✅ Recalcular pendientes SIEMPRE (evita negativos)
+        # ✅ Usar la suma real de cuotas litis
+        df_res["Cuota Litis Calculada"] = df_res["CuotaLitisTotal"]
+
+        # ✅ Recalcular saldos correctamente
         df_res["Honorario Pendiente"] = (
             df_res["Honorario Pactado"] - df_res["Honorario Pagado"]
         ).clip(lower=0)
@@ -682,23 +712,15 @@ if menu == "Dashboard":
     c5.metric("Cuota litis pagada (S/)", f"{total_pagado_l:,.2f}")
     c6.metric("Cuota litis pendiente (S/)", f"{total_pend_l:,.2f}")
 
-    # =========================
-    # Detalle por caso
-    # =========================
     st.divider()
     st.markdown("### 📌 Detalle por caso")
-
     if df_res.empty:
         st.info("Aún no hay información financiera.")
     else:
         st.dataframe(df_res, use_container_width=True)
 
-    # =========================
-    # Cuotas vencidas / por vencer
-    # =========================
     st.divider()
     st.markdown("### 📅 Cuotas vencidas / por vencer")
-
     if df_estado.empty or "SaldoCuota" not in df_estado.columns:
         st.info("Aún no hay cronograma calculable.")
     else:
@@ -708,7 +730,6 @@ if menu == "Dashboard":
         ).fillna(0)
 
         df_pend = df_estado[df_estado["SaldoCuota"] > 0]
-
         vencidas = df_pend[
             df_pend["DiasParaVencimiento"].notna()
             & (df_pend["DiasParaVencimiento"] < 0)
@@ -720,13 +741,9 @@ if menu == "Dashboard":
 
         st.markdown("**Vencidas**")
         st.dataframe(vencidas, use_container_width=True)
-
         st.markdown("**Por vencer (7 días)**")
         st.dataframe(por_vencer, use_container_width=True)
 
-    # =========================
-    # Export
-    # =========================
     st.download_button(
         "⬇️ Descargar reporte casos (CSV)",
         df_res.to_csv(index=False).encode("utf-8"),
