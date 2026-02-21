@@ -2822,15 +2822,18 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
         )
 
     with col3:
-        # Reset SOLO si no es asistente (recomendación mínima de seguridad)
-        is_readonly = st.session_state.get('rol') == 'asistente'
+    # ✅ Reset SOLO para ADMIN (abogado y asistente NO lo ven)
+    if st.session_state.get('rol') == 'admin':
         with st.expander("⚠️ Reset total del repositorio", expanded=False):
             st.warning("Esto borra: 1) repo_contratos.csv y 2) TODOS los archivos dentro de generados/.")
-            confirm = st.checkbox("Entiendo el riesgo y deseo borrar todo", key="rc_reset_confirm", disabled=is_readonly)
-            confirm2 = st.text_input("Escribe BORRAR para confirmar", value="", key="rc_reset_confirm2", disabled=is_readonly)
+            confirm = st.checkbox("Entiendo el riesgo y deseo borrar todo", key="rc_reset_confirm")
+            confirm2 = st.text_input("Escribe BORRAR para confirmar", value="", key="rc_reset_confirm2")
 
-            if st.button("🧨 BORRAR TODO DEFINITIVAMENTE", key="rc_reset_btn",
-                         disabled=is_readonly or (not confirm) or (confirm2.strip().upper() != "BORRAR")):
+            if st.button(
+                "🧨 BORRAR TODO DEFINITIVAMENTE",
+                key="rc_reset_btn",
+                disabled=(not confirm) or (confirm2.strip().upper() != "BORRAR")
+            ):
                 try:
                     # borrar CSV repositorio
                     if os.path.exists(REPO_CONTRATOS_FILE):
@@ -2848,7 +2851,6 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al resetear: {e}")
-
     # ====== Cuerpo del repositorio (TU UI ORIGINAL, intacto) ======
     repo = _repo_contratos_load()
     if repo.empty:
