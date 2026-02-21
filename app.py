@@ -2798,19 +2798,21 @@ def _repo_sync_contratos():
     _repo_contratos_save(repo)
     return repo
 
-# -------------------------
-# UI
-# -------------------------
+# =========================
+# UI del repositorio (CON BOTONES + RESET TOTAL)
+# =========================
 if 'menu' in globals() and menu == 'Repositorio Contratos':
     st.subheader('📦 Repositorio de Contratos')
 
-    # ====== BOTONES SUPERIORES ======
-    col1, col2, col3 = st.columns([1,1,1])
+    # ====== Barra superior: Sincronizar / Exportar / Reset total (sin borrar tus botones) ======
+    col1, col2, col3 = st.columns([1, 1, 1])
+
     with col1:
         if st.button('🔄 Sincronizar desde generados/', key='rc_sync'):
             _repo_sync_contratos()
             st.success('✅ Sincronizado')
             st.rerun()
+
     with col2:
         st.download_button(
             '⬇️ Descargar repositorio (CSV)',
@@ -2818,57 +2820,139 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
             'repo_contratos.csv',
             key='rc_export'
         )
+
     with col3:
-        with st.expander("⚠️ RESET TOTAL (PELIGRO)", expanded=False):
-            st.warning("Esto eliminará TODOS los contratos del repositorio y TODOS los archivos en generados/.")
-            confirm = st.checkbox("Entiendo y quiero borrar TODO", key="rc_reset_confirm")
-            if st.button("🧨 BORRAR TODO DEFINITIVAMENTE", disabled=not confirm, key="rc_reset_btn"):
+        # Reset SOLO si no es asistente (recomendación mínima de seguridad)
+        is_readonly = st.session_state.get('rol') == 'asistente'
+        with st.expander("⚠️ Reset total del repositorio", expanded=False):
+            st.warning("Esto borra: 1) repo_contratos.csv y 2) TODOS los archivos dentro de generados/.")
+            confirm = st.checkbox("Entiendo el riesgo y deseo borrar todo", key="rc_reset_confirm", disabled=is_readonly)
+            confirm2 = st.text_input("Escribe BORRAR para confirmar", value="", key="rc_reset_confirm2", disabled=is_readonly)
+
+            if st.button("🧨 BORRAR TODO DEFINITIVAMENTE", key="rc_reset_btn",
+                         disabled=is_readonly or (not confirm) or (confirm2.strip().upper() != "BORRAR")):
                 try:
+                    # borrar CSV repositorio
                     if os.path.exists(REPO_CONTRATOS_FILE):
                         os.remove(REPO_CONTRATOS_FILE)
+
+                    # borrar archivos generados
                     if os.path.exists(GENERADOS_DIR):
                         for fn in os.listdir(GENERADOS_DIR):
                             try:
                                 os.remove(os.path.join(GENERADOS_DIR, fn))
                             except Exception:
                                 pass
+
                     st.success("✅ Repositorio y generados/ eliminados por completo")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al resetear: {e}")
 
-    # ====== RESTO DEL UI (sin cambios funcionales) ======
+    # ====== Cuerpo del repositorio (TU UI ORIGINAL, intacto) ======
     repo = _repo_contratos_load()
     if repo.empty:
         st.info('No hay contratos aún. Guarda un borrador y sincroniza.')
     else:
-        f1,f2,f3 = st.columns([1,1,2])
+        f1, f2, f3 = st.columns([1, 1, 2])
         with f1:
-            est = st.selectbox('Estado', ['Todos','Borrador','Firmado'], key='rc_estado')
+            est = st.selectbox('Estado', ['Todos', 'Borrador', 'Firmado'], key='rc_estado')
         with f2:
-            vis = st.selectbox('Visibilidad', ['Incluye ocultos','Solo visibles','Solo ocultos'], index=0, key='rc_vis')
+            vis = st.selectbox('Visibilidad', ['Incluye ocultos', 'Solo visibles', 'Solo ocultos'], index=0, key='rc_vis')
         with f3:
             q = st.text_input('Buscar', key='rc_buscar').strip().lower()
 
         view = repo.copy()
         if vis == 'Solo visibles':
-            view = view[view['Visible'].astype(str)=='1']
+            view = view[view['Visible'].astype(str) == '1']
         elif vis == 'Solo ocultos':
-            view = view[view['Visible'].astype(str)!='1']
+            view = view[view['Visible'].astype(str) != '1']
         if est != 'Todos':
-            view = view[view['Estado'].astype(str)==est]
+            view = view[view['Estado'].astype(str) == est]
         if q:
-            view = view[
+            mask = (
                 view['Archivo'].astype(str).str.lower().str.contains(q, na=False) |
                 view['Expediente'].astype(str).str.lower().str.contains(q, na=False) |
                 view['Cliente'].astype(str).str.lower().str.contains(q, na=False) |
                 view['Abogado'].astype(str).str.lower().str.contains(q, na=False) |
                 view['NombreContrato'].astype(str).str.lower().str.contains(q, na=False)
-            ]
+            )
+            view = view[mask]
 
         st.dataframe(
             view[['ID','Archivo','Expediente','Cliente','Abogado','NombreContrato','Estado','Numero','Año','Sigla','Existe','Visible']],
             use_container_width=True
         )
 
+        if view.empty:
+            st.info('No hay resultados con esos filtros.')
+        else:
+            # selector con etiqueta clara
+            view2 = view.copy()
+            view2['ID'] = pd.to_numeric(view2['ID'], errors='coerce').fillna(0).astype(int)
+            view2['_label'] = view2.apply(
+                lambda r: f"ID {r['ID']} – {r.get('NombreContrato','')} – {r.get('Expediente','')} – {r.get('Estado','')}",
+                axis=1
+            )
 
+            sel_label = st.selectbox('Selecciona contrato', view2['_label'].tolist(), key='rc_sel_id')
+            sel_id = str(view2[view2['_label'] == sel_label].iloc[0]['ID'])
+
+            row = repo[repo['ID'].astype(str) == str(sel_id)].iloc[0]
+
+            notas = st.text_area('Notas', value=str(row.get('Notas','')), height=90, key='rc_notas')
+            sigla = st.text_input('Sigla', value=str(row.get('Sigla','CLS')), key='rc_sigla')
+
+            # Guardar notas
+            idx = _repo_get_idx(repo, sel_id)
+            if idx is not None:
+                repo.at[idx, 'Notas'] = notas
+                _repo_contratos_save(repo)
+
+            # ====== TUS BOTONES ORIGINALES (NO BORRADOS) ======
+            b1, b2, b3 = st.columns(3)
+
+            with b1:
+                if st.button('✅ Marcar FIRMADO (asigna N°)', key='rc_firmar_btn'):
+                    repo2 = _repo_contratos_load()
+                    idx2 = _repo_get_idx(repo2, sel_id)
+                    if idx2 is not None:
+                        repo2.at[idx2, 'Notas'] = notas
+                    repo2 = _repo_firmar(repo2, sel_id, sigla)
+                    st.success('✅ Firmado y numerado')
+                    st.rerun()
+
+            with b2:
+                if st.button('📝 Marcar BORRADOR', key='rc_borr_btn'):
+                    repo2 = _repo_contratos_load()
+                    idx2 = _repo_get_idx(repo2, sel_id)
+                    if idx2 is not None:
+                        repo2.at[idx2, 'Notas'] = notas
+                    repo2 = _repo_borrador(repo2, sel_id)
+                    st.success('✅ Marcado como borrador')
+                    st.rerun()
+
+            with b3:
+                if str(row.get('Visible','1')) == '1':
+                    if st.button('🗑️ Quitar del repositorio', key='rc_quitar_btn'):
+                        repo2 = _repo_contratos_load()
+                        repo2 = _repo_quitar(repo2, sel_id)
+                        st.success('✅ Quitado (no revive)')
+                        st.rerun()
+                else:
+                    if st.button('♻️ Restaurar', key='rc_rest_btn'):
+                        repo2 = _repo_contratos_load()
+                        repo2 = _repo_restaurar(repo2, sel_id)
+                        st.success('✅ Restaurado')
+                        st.rerun()
+
+            st.divider()
+            ruta = str(row.get('Ruta',''))
+            if str(row.get('Existe','')) == '1' and ruta and os.path.exists(ruta):
+                ext = os.path.splitext(ruta)[1].lower()
+                mime = 'text/plain' if ext == '.txt' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                with open(ruta, 'rb') as f:
+                    data = f.read()
+                st.download_button('⬇️ Descargar archivo', data=data, file_name=os.path.basename(ruta), mime=mime, key=f'rc_dl_{sel_id}')
+            else:
+                st.warning('Archivo no encontrado en generados/.')
