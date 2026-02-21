@@ -91,9 +91,35 @@ SCHEMAS = {
     # ✅ CONSULTAS: nuevo módulo
     "consultas": ["ID","Fecha","Cliente","Caso","Abogado","Consulta","Estrategia","CostoConsulta","HonorariosPropuestos","Proforma","LinkOneDrive","Notas"],
 }
+# ============================
+# MARCA 006: ESQUEMAS PARA ARCHIVOS NUEVOS (evita KeyError)
+# ============================
+SCHEMAS.setdefault("instancias", [
+    "ID", "Caso", "TipoInstancia", "EstadoActual", "Resultado", "Accion", "Honorarios", "FechaRegistro"
+])
 
+SCHEMAS.setdefault("honorarios_tipo", [
+    "ID", "Caso", "Tipo", "Monto", "Notas", "FechaRegistro"
+])
+
+SCHEMAS.setdefault("contratos", [
+    "ID", "Numero", "Año", "Sigla", "NombreContrato",
+    "Caso", "Cliente", "Abogado", "Estado", "Archivo", "Fecha"
+])
+
+SCHEMAS.setdefault("auditoria_mod", [
+    "ID", "Fecha", "Usuario", "Rol", "Accion", "Entidad", "EntidadID", "Detalle"
+])
 ETAPAS_HONORARIOS = ["Primera instancia", "Segunda instancia", "Casación", "Otros"]
 TIPOS_CUOTA = ["Honorarios", "CuotaLitis"]
+
+# ============================
+# MARCA 006: Esquemas faltantes (evita KeyError)
+# ============================
+SCHEMAS.setdefault("instancias", ["ID","Caso","TipoInstancia","EstadoActual","Resultado","Accion","Honorarios","FechaRegistro"])
+SCHEMAS.setdefault("honorarios_tipo", ["ID","Caso","Tipo","Monto","Notas","FechaRegistro"])
+SCHEMAS.setdefault("contratos", ["ID","Numero","Año","Sigla","NombreContrato","Caso","Cliente","Abogado","Estado","Archivo","Fecha"])
+SCHEMAS.setdefault("auditoria_mod", ["ID","Fecha","Usuario","Rol","Accion","Entidad","EntidadID","Detalle"])
 
 # ==========================================================
 # UTILIDADES
@@ -143,7 +169,7 @@ def backup_file(path: str):
 # ==========================================================
 def ensure_csv(key: str):
     path = FILES[key]
-    cols = SCHEMAS[key]
+    cols = SCHEMAS.get(key, ["ID"])
 
     if not os.path.exists(path):
         pd.DataFrame(columns=cols).to_csv(path, index=False)
