@@ -1431,12 +1431,16 @@ if menu == "Plantillas de Contrato":
 )
 
 
+    # =========================
+    # NUEVA
+    # =========================
     if accion == "Nueva":
         with st.form("tpl_new"):
             nombre = st.text_input("Nombre")
             contenido = st.text_area("Contenido", height=300)
             notas = st.text_input("Notas", value="")
             submit = st.form_submit_button("Guardar plantilla")
+    
             if submit:
                 new_id = next_id(plantillas)
                 plantillas = add_row(plantillas, {
@@ -1448,6 +1452,55 @@ if menu == "Plantillas de Contrato":
                 }, "plantillas")
                 save_df("plantillas", plantillas)
                 st.success("✅ Plantilla creada")
+                st.rerun()
+    
+    # =========================
+    # EDITAR
+    # =========================
+    elif accion == "Editar":
+        if plantillas.empty:
+            st.info("No hay plantillas.")
+        else:
+            sel = st.selectbox(
+                "Selecciona plantilla",
+                plantillas["ID"].tolist(),
+                format_func=lambda x: f"ID {x} – {plantillas[plantillas['ID']==x].iloc[0]['Nombre']}"
+            )
+    
+            fila = plantillas[plantillas["ID"] == sel].iloc[0]
+    
+            with st.form("tpl_edit"):
+                nombre = st.text_input("Nombre", value=str(fila["Nombre"]))
+                contenido = st.text_area("Contenido", value=str(fila["Contenido"]), height=300)
+                notas = st.text_input("Notas", value=str(fila["Notas"]))
+                submit = st.form_submit_button("Guardar cambios")
+    
+                if submit:
+                    idx = plantillas.index[plantillas["ID"] == sel][0]
+                    plantillas.loc[idx, ["Nombre","Contenido","Notas"]] = [nombre, contenido, notas]
+                    save_df("plantillas", plantillas)
+                    st.success("✅ Plantilla actualizada")
+                    st.rerun()
+    
+    # =========================
+    # ELIMINAR
+    # =========================
+    elif accion == "Eliminar":
+        if plantillas.empty:
+            st.info("No hay plantillas.")
+        else:
+            sel = st.selectbox(
+                "Selecciona plantilla a eliminar",
+                plantillas["ID"].tolist(),
+                format_func=lambda x: f"ID {x} – {plantillas[plantillas['ID']==x].iloc[0]['Nombre']}"
+            )
+    
+            st.warning("⚠️ Esta acción no se puede deshacer")
+    
+            if st.button("🗑️ Eliminar plantilla"):
+                plantillas = plantillas[plantillas["ID"] != sel].copy()
+                save_df("plantillas", plantillas)
+                st.success("✅ Plantilla eliminada")
                 st.rerun()
 
     st.divider()
