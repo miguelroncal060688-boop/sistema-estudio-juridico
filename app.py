@@ -2821,7 +2821,7 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
             key='rc_export'
         )
 
-    with col3:
+   with col3:
     # ✅ Reset SOLO para ADMIN (abogado y asistente NO lo ven)
     if st.session_state.get('rol') == 'admin':
         with st.expander("⚠️ Reset total del repositorio", expanded=False):
@@ -2851,6 +2851,9 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al resetear: {e}")
+    else:
+        # ✅ Importante: bloque vacío explícito para evitar IndentationError
+        st.write("")
     # ====== Cuerpo del repositorio (TU UI ORIGINAL, intacto) ======
     repo = _repo_contratos_load()
     if repo.empty:
