@@ -1603,7 +1603,16 @@ if menu == "Generar Contrato":
         st.text_area("Vista previa", value=generado, height=350)
         nombre_archivo = f"Contrato_{exp.replace('/','_')}_{str(tpl['Nombre']).replace(' ','_')}.txt"
         st.download_button("⬇️ Descargar contrato (TXT)", data=generado.encode("utf-8"), file_name=nombre_archivo)
-        docx_file = generar_docx(generado, titulo=nombre_contrato)
+        docx_file = generar_docx(generado, titulo=str(tpl.get("Nombre","Contrato")))
+        if docx_file is None:
+            st.warning("⚠️ No se pudo generar Word. Falta instalar python-docx en requirements.txt")
+        else:
+            st.download_button(
+                "⬇️ Descargar contrato (WORD)",
+                data=docx_file,
+                file_name=nombre_archivo.replace(".txt", ".docx"),
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
 
         st.download_button(
             "⬇️ Descargar contrato (WORD)",
