@@ -406,57 +406,142 @@ def canon_last_by_case(df: pd.DataFrame, case_col="Caso"):
     tmp.drop(columns=["_id"], inplace=True, errors="ignore")
     return tmp
 
+
+def gastos_actuaciones_por_caso():
+    """
+    Suma gastos de actuaciones por caso:
+    GastosActuaciones = CostasAranceles + Gastos
+    """
+    if actuaciones.empty:
+        return pd.DataFrame(columns=["Caso", "GastosActuaciones"])
+
+    df = actuaciones.copy()
+    df["Caso"] = df["Caso"].apply(normalize_key)
+
+    df["CostasAranceles"] = pd.to_numeric(df.get("CostasAranceles", 0), errors="coerce").fillna(0.0)
+    df["Gastos"] = pd.to_numeric(df.get("Gastos", 0), errors="coerce").fillna(0.0)
+    df["GastosActuaciones"] = df["CostasAranceles"] + df["Gastos"]
+
+    out = df.groupby("Caso", as_index=False)["GastosActuaciones"].sum()
+    return out
+
+
 def resumen_financiero_df():
+    """
+    Resumen por caso (Expediente) con sumas correctas:
+    - Honorarios pactados: usa etapas si hay; si no, suma TODOS los honorarios totales
+    - Honorarios pagados: suma TODOS los pagos
+    - Cuota litis calculada: suma TODAS las filas (Monto Base * % / 100)
+    - Pagos litis: suma TODOS
+    - Pendientes: nunca negativos
+    - Gastos actuaciones: suma CostasAranceles + Gastos
+    """
     if casos.empty:
         return pd.DataFrame(columns=[
             "Expediente","Cliente","Materia",
             "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
-            "Cuota Litis Calculada","Pagado Litis","Saldo Litis"
+            "Cuota Litis Calculada","Pagado Litis","Saldo Litis",
+            "Gastos Actuaciones","Saldo Total"
         ])
 
-    canon_h = canon_last_by_case(honorarios, "Caso")
-    canon_cl = canon_last_by_case(cuota_litis, "Caso")
-    canon_cl["Monto Base"] = safe_float_series(canon_cl["Monto Base"])
-    canon_cl["Porcentaje"] = safe_float_series(canon_cl["Porcentaje"])
-    canon_cl["CuotaCalc"] = canon_cl["Monto Base"] * canon_cl["Porcentaje"] / 100.0
+    # Normalizar claves en dataframes financieros (defensivo)
+    for df in [honorarios, honorarios_etapas, pagos_honorarios, cuota_litis, pagos_litis]:
+        if df is not None and not df.empty and "Caso" in df.columns:
+            df["Caso"] = df["Caso"].apply(normalize_key)
+
+    # Preparar cuota litis con cálculo por fila (no último)
+    cl = cuota_litis.copy()
+    if not cl.empty:
+        cl["Monto Base"] = safe_float_series(cl.get("Monto Base", 0))
+        cl["Porcentaje"] = safe_float_series(cl.get("Porcentaje", 0))
+        cl["CuotaCalc"] = cl["Monto Base"] * cl["Porcentaje"] / 100.0
+    else:
+        cl = pd.DataFrame(columns=["Caso", "CuotaCalc"])
+
+    # Gastos por actuaciones
+    gastos_df = gastos_actuaciones_por_caso()
+    gastos_map = {}
+    if not gastos_df.empty:
+        gastos_map = dict(zip(gastos_df["Caso"].astype(str), safe_float_series(gastos_df["GastosActuaciones"]).tolist()))
 
     rows = []
     for _, c in casos.iterrows():
-        exp = normalize_key(c["Expediente"])
+        exp = normalize_key(c.get("Expediente",""))
 
+        # -------------------------
+        # 1) Honorario pactado
+        # - Si existen etapas para el expediente, suma etapas
+        # - Si no, suma TODOS los honorarios totales del expediente (no último)
+        # -------------------------
         etapas_exp = honorarios_etapas[honorarios_etapas["Caso"] == exp].copy()
         if not etapas_exp.empty:
-            pactado = safe_float_series(etapas_exp["Monto Pactado"]).sum()
+            pactado = safe_float_series(etapas_exp.get("Monto Pactado", 0)).sum()
         else:
-            pactado = safe_float_series(canon_h[canon_h["Caso"] == exp]["Monto Pactado"]).sum()
+            sub_h = honorarios[honorarios["Caso"] == exp].copy()
+            pactado = safe_float_series(sub_h.get("Monto Pactado", 0)).sum()
 
-        pagado_h = safe_float_series(pagos_honorarios[pagos_honorarios["Caso"] == exp]["Monto"]).sum()
+        # -------------------------
+        # 2) Pagos honorarios (sumar todos)
+        # -------------------------
+        sub_ph = pagos_honorarios[pagos_honorarios["Caso"] == exp].copy()
+        pagado_h = safe_float_series(sub_ph.get("Monto", 0)).sum()
 
-        calc = safe_float_series(canon_cl[canon_cl["Caso"] == exp]["CuotaCalc"]).sum()
-        pagado_l = safe_float_series(pagos_litis[pagos_litis["Caso"] == exp]["Monto"]).sum()
+        # -------------------------
+        # 3) Cuota litis calculada (sumar todas las filas)
+        # -------------------------
+        sub_cl = cl[cl["Caso"] == exp].copy()
+        calc = safe_float_series(sub_cl.get("CuotaCalc", 0)).sum()
+
+        # -------------------------
+        # 4) Pagos litis (sumar todos)
+        # -------------------------
+        sub_pl = pagos_litis[pagos_litis["Caso"] == exp].copy()
+        pagado_l = safe_float_series(sub_pl.get("Monto", 0)).sum()
+
+        # -------------------------
+        # 5) Pendientes (nunca negativos)
+        # -------------------------
+        pend_h = max(0.0, float(pactado) - float(pagado_h))
+        pend_l = max(0.0, float(calc) - float(pagado_l))
+
+        # -------------------------
+        # 6) Gastos actuaciones
+        # -------------------------
+        gastos_act = float(gastos_map.get(exp, 0.0))
+
+        # -------------------------
+        # 7) Saldo total real
+        # -------------------------
+        saldo_total = float(pend_h + pend_l + gastos_act)
 
         rows.append([
             exp, c.get("Cliente",""), c.get("Materia",""),
-            float(pactado), float(pagado_h), float(pactado - pagado_h),
-            float(calc), float(pagado_l), float(calc - pagado_l)
+            float(pactado), float(pagado_h), float(pend_h),
+            float(calc), float(pagado_l), float(pend_l),
+            float(gastos_act), float(saldo_total)
         ])
 
     return pd.DataFrame(rows, columns=[
         "Expediente","Cliente","Materia",
         "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
-        "Cuota Litis Calculada","Pagado Litis","Saldo Litis"
+        "Cuota Litis Calculada","Pagado Litis","Saldo Litis",
+        "Gastos Actuaciones","Saldo Total"
     ])
+
 
 def cuotas_status_all():
     if cuotas.empty:
         return pd.DataFrame()
 
     df = cuotas.copy()
+    df["Caso"] = df["Caso"].apply(normalize_key)  # ✅ defensivo
     df["Monto"] = safe_float_series(df["Monto"])
     df["FechaVenc_dt"] = df["FechaVenc"].apply(to_date_safe)
 
     ph = pagos_honorarios.copy()
     pl = pagos_litis.copy()
+    ph["Caso"] = ph["Caso"].apply(normalize_key)  # ✅ defensivo
+    pl["Caso"] = pl["Caso"].apply(normalize_key)  # ✅ defensivo
     ph["Monto"] = safe_float_series(ph["Monto"])
     pl["Monto"] = safe_float_series(pl["Monto"])
 
@@ -507,7 +592,6 @@ def cuotas_status_all():
     out_l = calc_for_type("CuotaLitis", pl)
     out = pd.concat([out_h, out_l], ignore_index=True) if (not out_h.empty or not out_l.empty) else pd.DataFrame()
     return out
-
 # ==========================================================
 # PANEL DE CONTROL (RESET OCULTO)
 # ==========================================================
