@@ -291,7 +291,7 @@ def login_ui():
     brand_header()
     st.subheader("Ingreso al Sistema")
 
-    u = st.text_input("Usuario", value=""
+    u = st.text_input("Usuario", value="")
     p = st.text_input("Contraseña", type="password", value="")
 
     if st.button("Ingresar"):
