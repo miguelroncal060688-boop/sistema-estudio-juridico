@@ -1363,124 +1363,253 @@ if menu == "Actuaciones":
             st.download_button("⬇️ Descargar historial (TXT)", txt.encode("utf-8"), f"historial_actuaciones_{exp_r.replace('/','_')}.txt")
 
 # ==========================================================
-# CONSULTAS (nuevo): formulario + proforma + historial desplegable
+# CONSULTAS: autoguardado + abogado + costo + proforma + historial + reporte ingresos
 # ==========================================================
 if menu == "Consultas":
-    st.subheader("🗂️ Consultas – Registro, proforma e historial")
+    st.subheader("🗂️ Consultas – Registro, proforma e historial (con autoguardado)")
 
-    tab_new, tab_hist, tab_rep = st.tabs(["Nueva consulta", "Historial (desplegable)", "Reporte"])
+    # -------- AUTOGUARDADO EN SESIÓN --------
+    if "consulta_draft" not in st.session_state:
+        st.session_state.consulta_draft = {
+            "Fecha": str(date.today()),
+            "Cliente": "",
+            "Caso": "",
+            "Abogado": "",
+            "Consulta": "",
+            "Estrategia": "",
+            "CostoConsulta": 0.0,
+            "HonorariosPropuestos": 0.0,
+            "LinkOneDrive": "",
+            "Notas": ""
+        }
+
+    draft = st.session_state.consulta_draft
+
+    tab_new, tab_hist, tab_rep = st.tabs(["Nueva consulta", "Historial (desplegable)", "Reporte / Ingresos"])
 
     exp_list = casos["Expediente"].tolist() if not casos.empty else []
     clientes_list = clientes["Nombre"].tolist() if not clientes.empty else []
+    abogados_list = abogados["Nombre"].tolist() if not abogados.empty else []
 
+    # ==========================================================
+    # TAB: NUEVA (SIN FORM -> autoguardado real al escribir)
+    # ==========================================================
     with tab_new:
-        with st.form("cons_new_form"):
-            fecha = st.date_input("Fecha", value=date.today())
-            cliente = st.selectbox("Cliente", clientes_list) if clientes_list else st.text_input("Cliente")
-            caso = st.selectbox("Expediente (opcional)", [""] + exp_list) if exp_list else st.text_input("Expediente (opcional)")
-            consulta_txt = st.text_area("Consulta (amplio)", height=180)
-            estrategia_txt = st.text_area("Propuesta de estrategia (amplio)", height=180)
-            honorarios_prop = st.number_input("Honorarios propuestos (S/)", min_value=0.0, step=50.0)
-            link = st.text_input("Link OneDrive (opcional)")
-            notas = st.text_area("Notas (opcional)", height=100)
+        st.markdown("### ✍️ Nueva consulta (autoguardado activado)")
 
-            # Proforma (texto)
-            proforma = (
-                f"PROFORMA – {APP_NAME}\n"
-                f"Fecha: {fecha}\n"
-                f"Cliente: {cliente}\n"
-                f"Expediente: {caso}\n"
-                f"{'-'*60}\n"
-                f"CONSULTA:\n{consulta_txt}\n\n"
-                f"PROPUESTA DE ESTRATEGIA:\n{estrategia_txt}\n\n"
-                f"HONORARIOS PROPUESTOS: S/ {honorarios_prop:,.2f}\n"
-                f"{'-'*60}\n"
-                f"Notas: {notas}\n"
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c1:
+            fecha = st.date_input("Fecha", value=pd.to_datetime(draft["Fecha"]).date() if str(draft["Fecha"]).strip() else date.today(), key="cons_fecha")
+            draft["Fecha"] = str(fecha)
+        with c2:
+            if clientes_list:
+                cliente = st.selectbox("Cliente", clientes_list, index=clientes_list.index(draft["Cliente"]) if draft["Cliente"] in clientes_list else 0, key="cons_cliente")
+            else:
+                cliente = st.text_input("Cliente", value=draft["Cliente"], key="cons_cliente_txt")
+            draft["Cliente"] = cliente
+        with c3:
+            if exp_list:
+                opciones = [""] + exp_list
+                caso = st.selectbox("Expediente (opcional)", opciones, index=opciones.index(draft["Caso"]) if draft["Caso"] in opciones else 0, key="cons_caso")
+            else:
+                caso = st.text_input("Expediente (opcional)", value=draft["Caso"], key="cons_caso_txt")
+            draft["Caso"] = caso
+
+        c4, c5 = st.columns([1, 1])
+        with c4:
+            if abogados_list:
+                abogado = st.selectbox("Abogado a cargo", abogados_list, index=abogados_list.index(draft["Abogado"]) if draft["Abogado"] in abogados_list else 0, key="cons_abogado")
+            else:
+                abogado = st.text_input("Abogado a cargo", value=draft["Abogado"], key="cons_abogado_txt")
+            draft["Abogado"] = abogado
+        with c5:
+            costo = st.number_input("Costo de consulta (S/)", min_value=0.0, step=50.0, value=float(draft.get("CostoConsulta", 0.0) or 0.0), key="cons_costo")
+            draft["CostoConsulta"] = float(costo)
+
+        consulta_txt = st.text_area("Consulta (amplio)", value=draft["Consulta"], height=180, key="cons_consulta")
+        draft["Consulta"] = consulta_txt
+
+        estrategia_txt = st.text_area("Propuesta de estrategia (amplio)", value=draft["Estrategia"], height=180, key="cons_estrategia")
+        draft["Estrategia"] = estrategia_txt
+
+        c6, c7 = st.columns([1, 1])
+        with c6:
+            honorarios_prop = st.number_input(
+                "Honorarios propuestos (S/)",
+                min_value=0.0,
+                step=50.0,
+                value=float(draft.get("HonorariosPropuestos", 0.0) or 0.0),
+                key="cons_honor"
             )
+            draft["HonorariosPropuestos"] = float(honorarios_prop)
+        with c7:
+            link = st.text_input("Link OneDrive (opcional)", value=draft["LinkOneDrive"], key="cons_link")
+            draft["LinkOneDrive"] = link
 
-            submit = st.form_submit_button("Guardar consulta y proforma")
-            if submit:
+        notas = st.text_area("Notas (opcional)", value=draft["Notas"], height=100, key="cons_notas")
+        draft["Notas"] = notas
+
+        # Proforma (texto)
+        proforma = (
+            f"PROFORMA – {APP_NAME}\n"
+            f"Fecha: {draft['Fecha']}\n"
+            f"Cliente: {draft['Cliente']}\n"
+            f"Expediente: {draft['Caso']}\n"
+            f"Abogado a cargo: {draft['Abogado']}\n"
+            f"{'-'*60}\n"
+            f"CONSULTA:\n{draft['Consulta']}\n\n"
+            f"PROPUESTA DE ESTRATEGIA:\n{draft['Estrategia']}\n\n"
+            f"COSTO DE CONSULTA: S/ {float(draft['CostoConsulta']):,.2f}\n"
+            f"HONORARIOS PROPUESTOS: S/ {float(draft['HonorariosPropuestos']):,.2f}\n"
+            f"{'-'*60}\n"
+            f"Notas: {draft['Notas']}\n"
+        )
+
+        st.download_button(
+            "⬇️ Descargar proforma (TXT)",
+            proforma.encode("utf-8"),
+            f"proforma_{date.today()}.txt",
+            key="cons_pf_draft"
+        )
+
+        b1, b2, b3 = st.columns([1, 1, 2])
+        with b1:
+            if st.button("💾 Guardar consulta y proforma", key="cons_save"):
                 new_id = next_id(consultas)
                 consultas = add_row(consultas, {
                     "ID": new_id,
-                    "Fecha": str(fecha),
-                    "Cliente": cliente,
-                    "Caso": normalize_key(caso),
-                    "Consulta": consulta_txt,
-                    "Estrategia": estrategia_txt,
-                    "HonorariosPropuestos": float(honorarios_prop),
+                    "Fecha": str(draft["Fecha"]),
+                    "Cliente": draft["Cliente"],
+                    "Caso": normalize_key(draft["Caso"]),
+                    "Abogado": draft["Abogado"],
+                    "Consulta": draft["Consulta"],
+                    "Estrategia": draft["Estrategia"],
+                    "CostoConsulta": float(draft["CostoConsulta"]),
+                    "HonorariosPropuestos": float(draft["HonorariosPropuestos"]),
                     "Proforma": proforma,
-                    "LinkOneDrive": link,
-                    "Notas": notas
+                    "LinkOneDrive": draft["LinkOneDrive"],
+                    "Notas": draft["Notas"]
                 }, "consultas")
                 save_df("consultas", consultas)
+
+                # ✅ limpiar borrador (autoguardado) al guardar
+                st.session_state.consulta_draft = {
+                    "Fecha": str(date.today()),
+                    "Cliente": "",
+                    "Caso": "",
+                    "Abogado": "",
+                    "Consulta": "",
+                    "Estrategia": "",
+                    "CostoConsulta": 0.0,
+                    "HonorariosPropuestos": 0.0,
+                    "LinkOneDrive": "",
+                    "Notas": ""
+                }
                 st.success("✅ Consulta guardada")
                 st.rerun()
 
-        if 'proforma' in locals():
-            st.download_button("⬇️ Descargar proforma (TXT)", proforma.encode("utf-8"), f"proforma_{date.today()}.txt")
+        with b2:
+            if st.button("🧹 Limpiar borrador", key="cons_clear"):
+                st.session_state.consulta_draft = {
+                    "Fecha": str(date.today()),
+                    "Cliente": "",
+                    "Caso": "",
+                    "Abogado": "",
+                    "Consulta": "",
+                    "Estrategia": "",
+                    "CostoConsulta": 0.0,
+                    "HonorariosPropuestos": 0.0,
+                    "LinkOneDrive": "",
+                    "Notas": ""
+                }
+                st.success("✅ Borrador limpiado")
+                st.rerun()
 
+        with b3:
+            st.info("✅ Autoguardado activo: si la app se recarga, tus campos se mantienen en esta sesión.")
+
+    # ==========================================================
+    # TAB: HISTORIAL (DESPLEGABLE) + EDITAR/BORRAR
+    # ==========================================================
     with tab_hist:
         if consultas.empty:
             st.info("Aún no hay consultas registradas.")
         else:
-            # desplegable por ID con etiqueta amigable
             def label_consulta(row):
-                return f"ID {row['ID']} – {row.get('Fecha','')} – {row.get('Cliente','')}"
+                return f"ID {row['ID']} – {row.get('Fecha','')} – {row.get('Cliente','')} – {row.get('Abogado','')}"
             consultas_view = consultas.copy()
             consultas_view["_label"] = consultas_view.apply(label_consulta, axis=1)
 
-            sel_label = st.selectbox("Selecciona una consulta", consultas_view["_label"].tolist())
+            sel_label = st.selectbox("Selecciona una consulta", consultas_view["_label"].tolist(), key="cons_hist_sel")
             row = consultas_view[consultas_view["_label"] == sel_label].iloc[0]
 
             st.markdown("### Detalle de consulta")
             st.write(f"**Fecha:** {row.get('Fecha','')}")
             st.write(f"**Cliente:** {row.get('Cliente','')}")
             st.write(f"**Expediente:** {row.get('Caso','')}")
+            st.write(f"**Abogado a cargo:** {row.get('Abogado','')}")
+            st.write(f"**Costo consulta:** S/ {money(row.get('CostoConsulta',0)):,.2f}")
+
             if str(row.get("LinkOneDrive","")).strip():
                 st.markdown(f"**Link OneDrive:** {row.get('LinkOneDrive')}")
+
             st.markdown("**Consulta:**")
             st.write(row.get("Consulta",""))
             st.markdown("**Estrategia:**")
             st.write(row.get("Estrategia",""))
+
             st.markdown(f"**Honorarios propuestos:** S/ {money(row.get('HonorariosPropuestos',0)):,.2f}")
 
             st.divider()
             st.markdown("### Proforma")
-            st.text_area("Proforma (texto)", value=str(row.get("Proforma","")), height=260)
-            st.download_button("⬇️ Descargar proforma seleccionada (TXT)", str(row.get("Proforma","")).encode("utf-8"), f"proforma_consulta_{row['ID']}.txt")
+            st.text_area("Proforma (texto)", value=str(row.get("Proforma","")), height=260, key="cons_pf_view")
+            st.download_button(
+                "⬇️ Descargar proforma seleccionada (TXT)",
+                str(row.get("Proforma","")).encode("utf-8"),
+                f"proforma_consulta_{row['ID']}.txt",
+                key="cons_pf_dl_hist"
+            )
 
             st.divider()
             st.markdown("### Editar / borrar consulta (por ID)")
             sel_id = int(row["ID"])
             fila = consultas[consultas["ID"] == sel_id].iloc[0]
+
             with st.form("cons_edit_form"):
                 fecha_e = st.text_input("Fecha", value=str(fila.get("Fecha","")))
                 cliente_e = st.text_input("Cliente", value=str(fila.get("Cliente","")))
                 caso_e = st.text_input("Expediente", value=str(fila.get("Caso","")))
+                abogado_e = st.text_input("Abogado a cargo", value=str(fila.get("Abogado","")))
+                costo_e = st.number_input("Costo consulta (S/)", min_value=0.0, value=money(fila.get("CostoConsulta",0)), step=50.0)
+
                 consulta_e = st.text_area("Consulta", value=str(fila.get("Consulta","")), height=160)
                 estrategia_e = st.text_area("Estrategia", value=str(fila.get("Estrategia","")), height=160)
                 honor_e = st.number_input("Honorarios propuestos (S/)", min_value=0.0, value=money(fila.get("HonorariosPropuestos",0)), step=50.0)
+
                 link_e = st.text_input("Link OneDrive", value=str(fila.get("LinkOneDrive","")))
                 notas_e = st.text_area("Notas", value=str(fila.get("Notas","")), height=100)
+
                 submit = st.form_submit_button("Guardar cambios")
                 if submit:
-                    # regenerar proforma actualizada
                     proforma_new = (
                         f"PROFORMA – {APP_NAME}\n"
                         f"Fecha: {fecha_e}\n"
                         f"Cliente: {cliente_e}\n"
                         f"Expediente: {caso_e}\n"
+                        f"Abogado a cargo: {abogado_e}\n"
                         f"{'-'*60}\n"
                         f"CONSULTA:\n{consulta_e}\n\n"
                         f"PROPUESTA DE ESTRATEGIA:\n{estrategia_e}\n\n"
+                        f"COSTO DE CONSULTA: S/ {float(costo_e):,.2f}\n"
                         f"HONORARIOS PROPUESTOS: S/ {float(honor_e):,.2f}\n"
                         f"{'-'*60}\n"
                         f"Notas: {notas_e}\n"
                     )
                     idx = consultas.index[consultas["ID"] == sel_id][0]
-                    consultas.loc[idx, ["Fecha","Cliente","Caso","Consulta","Estrategia","HonorariosPropuestos","Proforma","LinkOneDrive","Notas"]] = [
-                        fecha_e, cliente_e, normalize_key(caso_e), consulta_e, estrategia_e, float(honor_e), proforma_new, link_e, notas_e
+                    consultas.loc[idx, ["Fecha","Cliente","Caso","Abogado","Consulta","Estrategia","CostoConsulta",
+                                        "HonorariosPropuestos","Proforma","LinkOneDrive","Notas"]] = [
+                        fecha_e, cliente_e, normalize_key(caso_e), abogado_e, consulta_e, estrategia_e,
+                        float(costo_e), float(honor_e), proforma_new, link_e, notas_e
                     ]
                     save_df("consultas", consultas)
                     st.success("✅ Consulta actualizada")
@@ -1492,11 +1621,29 @@ if menu == "Consultas":
                 st.success("✅ Eliminada")
                 st.rerun()
 
+    # ==========================================================
+    # TAB: REPORTE / INGRESOS
+    # ==========================================================
     with tab_rep:
         st.markdown("### Reporte de consultas")
         st.dataframe(consultas.sort_values("Fecha", ascending=False), use_container_width=True)
-        st.download_button("⬇️ Descargar consultas (CSV)", consultas.to_csv(index=False).encode("utf-8"), "consultas.csv")
+        st.download_button("⬇️ Descargar consultas (CSV)", consultas.to_csv(index=False).encode("utf-8"), "consultas.csv", key="cons_csv_all")
 
+        st.divider()
+        st.markdown("### 📈 Ingresos por consultas (suma de costos)")
+        if consultas.empty:
+            st.info("No hay consultas registradas.")
+        else:
+            tmp = consultas.copy()
+            tmp["CostoConsulta"] = pd.to_numeric(tmp.get("CostoConsulta", 0), errors="coerce").fillna(0.0)
+            tmp["Abogado"] = tmp.get("Abogado", "").astype(str)
+
+            rep = tmp.groupby("Abogado", as_index=False)["CostoConsulta"].sum().rename(
+                columns={"CostoConsulta": "IngresosConsultas"}
+            ).sort_values("IngresosConsultas", ascending=False)
+
+            st.dataframe(rep, use_container_width=True)
+            st.download_button("⬇️ Descargar ingresos (CSV)", rep.to_csv(index=False).encode("utf-8"), "ingresos_consultas.csv", key="cons_ing_csv")
 # ==========================================================
 # DOCUMENTOS
 # ==========================================================
