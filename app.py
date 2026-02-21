@@ -1863,3 +1863,118 @@ def notas_abogado():
         height=150,
         placeholder="Escribe aquí observaciones, criterios, recordatorios..."
     )
+# ============================================================
+# CASOS EXTENSION B1: DATOS JURÍDICOS ADICIONALES DEL CASO
+# ============================================================
+
+def caso_datos_juridicos_extra(data=None):
+    """
+    Campos adicionales para un caso judicial.
+    No rompe casos existentes.
+    """
+    st.subheader("⚖️ Datos Jurídicos del Caso")
+
+    juzgado = st.text_input(
+        "Juzgado",
+        value=(data or {}).get("Juzgado", "")
+    )
+
+    distrito_judicial = st.text_input(
+        "Distrito Judicial",
+        value=(data or {}).get("DistritoJudicial", "")
+    )
+
+    contraparte = st.text_input(
+        "Contraparte",
+        value=(data or {}).get("Contraparte", "")
+    )
+
+    contraparte_doc = st.text_input(
+        "DNI / RUC de la Contraparte",
+        value=(data or {}).get("ContraparteDoc", "")
+    )
+
+    return {
+        "Juzgado": juzgado,
+        "DistritoJudicial": distrito_judicial,
+        "Contraparte": contraparte,
+        "ContraparteDoc": contraparte_doc
+    }
+# ============================================================
+# INSTANCIAS EXTENSION B2: MODELO DE INSTANCIAS DEL CASO
+# ============================================================
+
+INSTANCIAS_FILE = "instancias.csv"
+
+def load_instancias():
+    if not os.path.exists(INSTANCIAS_FILE):
+        return pd.DataFrame(columns=[
+            "ID",
+            "CasoID",
+            "TipoInstancia",
+            "EstadoActual",
+            "Resultado",
+            "Accion",
+            "Honorarios"
+        ])
+    return pd.read_csv(INSTANCIAS_FILE)
+
+def save_instancias(df):
+    df.to_csv(INSTANCIAS_FILE, index=False)
+
+def nueva_instancia_form(caso_id):
+    """
+    Formulario para registrar una nueva instancia.
+    """
+    st.subheader("➕ Registrar Instancia")
+
+    tipo = st.selectbox(
+        "Tipo de Instancia",
+        ["Primera Instancia", "Segunda Instancia", "Casación", "Administrativa", "Otra"]
+    )
+
+    estado = st.text_input("Estado Actual")
+    resultado = st.text_input("Resultado")
+    accion = st.text_input("Acción a realizar")
+    honorarios = st.number_input("Honorarios por esta instancia", min_value=0.0, step=100.0)
+
+    if st.button("Guardar Instancia"):
+        df = load_instancias()
+        new_id = len(df) + 1
+
+        df.loc[len(df)] = [
+            new_id,
+            caso_id,
+            tipo,
+            estado,
+            resultado,
+            accion,
+            honorarios
+        ]
+
+        save_instancias(df)
+        st.success("✅ Instancia registrada correctamente")
+# ============================================================
+# INSTANCIAS EXTENSION B3: LISTADO DE INSTANCIAS POR CASO
+# ============================================================
+
+def listar_instancias_caso(caso_id):
+    st.subheader("📂 Instancias del Caso")
+
+    df = load_instancias()
+    df_caso = df[df["CasoID"] == caso_id]
+
+    if df_caso.empty:
+        st.info("No hay instancias registradas para este caso.")
+        return
+
+    st.dataframe(
+        df_caso[[
+            "TipoInstancia",
+            "EstadoActual",
+            "Resultado",
+            "Accion",
+            "Honorarios"
+        ]],
+        use_container_width=True
+    )
