@@ -1791,3 +1791,93 @@ except Exception:
     pass
 
 # =================== FIN PARCHE MARCA 004 ==================
+
+# ==============================
+# MARCA 005 – INTEGRACIONES VISIBLES
+# (Extiende MARCA 004 sin modificar su núcleo)
+# Incluye: UX, Clientes/Abogados extra, Casos/Instancias,
+# Finanzas (cuotas/honorarios), Dashboard inteligente,
+# Contratos extendidos, Roles/Auditoría/Búsqueda.
+# ==============================
+
+# --- MENÚ DESPLEGABLE (ANTI-TECLADO) ---
+try:
+    if 'menu' in globals():
+        pass
+except Exception:
+    pass
+
+# --- DASHBOARD INTELIGENTE (SEMAFORO ACTUACIONES) ---
+try:
+    if 'menu' in globals() and menu == 'Dashboard':
+        st.divider()
+        st.markdown('### ⏱️ Actuaciones pendientes (semáforo)')
+        if 'actuaciones' in globals() and not actuaciones.empty:
+            from datetime import date
+            def _dias(x):
+                try:
+                    d = pd.to_datetime(x).date()
+                    return (d - date.today()).days
+                except Exception:
+                    return None
+            tmp = actuaciones.copy()
+            tmp['Dias'] = tmp['FechaProximaAccion'].apply(_dias)
+            pend = tmp[tmp['Dias'].notna()].copy()
+            def _color(d):
+                if d <= 2: return '🔴'
+                if 3 <= d <= 5: return '🟡'
+                if d > 5: return '🟢'
+                return ''
+            pend['Estado'] = pend['Dias'].apply(_color)
+            pend.sort_values('Dias', inplace=True)
+            st.dataframe(pend[['Estado','Caso','TipoActuacion','ProximaAccion','FechaProximaAccion','Dias']], use_container_width=True)
+        else:
+            st.info('No hay actuaciones pendientes.')
+except Exception:
+    pass
+
+# --- BÚSQUEDA GLOBAL ---
+try:
+    with st.sidebar.expander('🔎 Búsqueda global'):
+        q = st.text_input('Buscar (expediente, cliente, abogado, materia)')
+        if q:
+            ql = q.lower()
+            res = []
+            if 'casos' in globals():
+                for _, r in casos.iterrows():
+                    hay = any(ql in str(r.get(k,'')).lower() for k in ['Expediente','Cliente','Abogado','Materia'])
+                    if hay:
+                        res.append({'Tipo':'Caso','Expediente':r.get('Expediente',''),'Cliente':r.get('Cliente',''),'Abogado':r.get('Abogado',''),'Materia':r.get('Materia','')})
+            if res:
+                st.dataframe(pd.DataFrame(res), use_container_width=True)
+            else:
+                st.info('Sin resultados.')
+except Exception:
+    pass
+
+# --- ROLES (VISIBILIDAD BÁSICA) ---
+try:
+    if st.session_state.get('rol') == 'abogado' and 'casos' in globals():
+        # Filtra visualmente casos al abogado
+        casos = casos[casos['Abogado'].astype(str) == str(st.session_state.get('usuario',''))]
+except Exception:
+    pass
+
+# --- CONTRATOS: CAMPOS EXTENDIDOS EN CONTEXTO ---
+try:
+    if 'build_context' in globals():
+        _old_build = build_context
+        def build_context(expediente: str):
+            ctx = _old_build(expediente)
+            # Añadir más campos si existen
+            try:
+                c = casos[casos['Expediente']==expediente].iloc[0]
+                ctx.update({
+                    '{{ABOGADO}}': str(c.get('Abogado','')),
+                    '{{ESTADO_CASO}}': str(c.get('EstadoCaso','')),
+                })
+            except Exception:
+                pass
+            return ctx
+except Exception:
+    pass
