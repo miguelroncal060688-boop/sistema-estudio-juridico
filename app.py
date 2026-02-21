@@ -720,170 +720,299 @@ if menu == "Ficha del Caso":
                 g.metric("Saldo litis", f"S/ {money(f['Saldo Litis']):,.2f}")
 
 # ==========================================================
-# CLIENTES (CRUD)
+# ==========================================================
+# CLIENTES (CRUD) – Natural / Jurídica + Emergencia + Datos empresa
 # ==========================================================
 if menu == "Clientes":
-    st.subheader("👥 Clientes")
-    accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True)
-
-    if accion == "Nuevo":
-        with st.form("nuevo_cliente"):
-            nombre = st.text_input("Nombre")
-            dni = st.text_input("DNI")
-            celular = st.text_input("Celular")
-            correo = st.text_input("Correo")
-            direccion = st.text_input("Dirección")
-            obs = st.text_area("Observaciones")
-            submit = st.form_submit_button("Guardar")
-            if submit:
-                new_id = next_id(clientes)
-                clientes = add_row(clientes, {
-                    "ID": new_id, "Nombre": nombre, "DNI": dni, "Celular": celular,
-                    "Correo": correo, "Direccion": direccion, "Observaciones": obs
-                }, "clientes")
-                save_df("clientes", clientes)
-                st.success("✅ Cliente registrado")
-                st.rerun()
-
-    elif accion == "Editar" and not clientes.empty:
-        sel = st.selectbox("Cliente ID", clientes["ID"].tolist())
-        fila = clientes[clientes["ID"] == sel].iloc[0]
-        with st.form("edit_cliente"):
-            nombre = st.text_input("Nombre", value=str(fila["Nombre"]))
-            dni = st.text_input("DNI", value=str(fila["DNI"]))
-            celular = st.text_input("Celular", value=str(fila["Celular"]))
-            correo = st.text_input("Correo", value=str(fila["Correo"]))
-            direccion = st.text_input("Dirección", value=str(fila["Direccion"]))
-            obs = st.text_area("Observaciones", value=str(fila["Observaciones"]))
-            submit = st.form_submit_button("Guardar cambios")
-            if submit:
-                idx = clientes.index[clientes["ID"] == sel][0]
-                clientes.loc[idx, :] = [sel, nombre, dni, celular, correo, direccion, obs]
-                save_df("clientes", clientes)
-                st.success("✅ Actualizado")
-                st.rerun()
-
-    elif accion == "Eliminar" and not clientes.empty:
-        sel = st.selectbox("Cliente ID a eliminar", clientes["ID"].tolist())
-        if st.button("Eliminar cliente"):
-            clientes = clientes[clientes["ID"] != sel].copy()
-            save_df("clientes", clientes)
-            st.success("✅ Eliminado")
-            st.rerun()
-
-    st.dataframe(clientes, use_container_width=True)
-    st.download_button("⬇️ Descargar clientes (CSV)", clientes.to_csv(index=False).encode("utf-8"), "clientes.csv")
+ st.subheader("👥 Clientes")
+ df_cli = load_df("clientes")
+ is_readonly = st.session_state.get('rol') == 'asistente'
+ accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True)
+ if accion == "Nuevo":
+  with st.form("nuevo_cliente"):
+   tipo = st.selectbox("Tipo de cliente", ["Natural","Jurídica"], index=0)
+   nombre = st.text_input("Nombre (Persona Natural)")
+   dni = st.text_input("DNI")
+   celular = st.text_input("Celular")
+   correo = st.text_input("Correo")
+   direccion = st.text_input("Dirección")
+   contacto_em = st.text_input("Contacto de emergencia")
+   cel_em = st.text_input("Celular de emergencia")
+   st.markdown("**Datos de Persona Jurídica (si corresponde)**")
+   razon = st.text_input("Razón Social")
+   ruc = st.text_input("RUC")
+   rep = st.text_input("Representante Legal")
+   partida = st.text_input("Partida Electrónica")
+   sede = st.text_input("Sede Registral")
+   obs = st.text_area("Observaciones")
+   submit = st.form_submit_button("Guardar", disabled=is_readonly)
+  if submit:
+   new_id = next_id(df_cli)
+   row = {
+    "ID": new_id,
+    "TipoCliente": tipo,
+    "Nombre": nombre,
+    "DNI": dni,
+    "Celular": celular,
+    "Correo": correo,
+    "Direccion": direccion,
+    "Observaciones": obs,
+    "ContactoEmergencia": contacto_em,
+    "CelularEmergencia": cel_em,
+    "RazonSocial": razon if tipo == "Jurídica" else "",
+    "RUC": ruc if tipo == "Jurídica" else "",
+    "RepresentanteLegal": rep if tipo == "Jurídica" else "",
+    "PartidaElectronica": partida if tipo == "Jurídica" else "",
+    "SedeRegistral": sede if tipo == "Jurídica" else "",
+   }
+   df_cli = add_row(df_cli, row, "clientes")
+   save_df("clientes", df_cli)
+   try: _audit_log('ADD','clientes', new_id, nombre)
+   except Exception: pass
+   st.success("✅ Cliente registrado")
+   st.rerun()
+ elif accion == "Editar" and not df_cli.empty:
+  sel = st.selectbox("Cliente ID", df_cli["ID"].tolist(), key='cli_edit_id')
+  fila = df_cli[df_cli["ID"] == sel].iloc[0]
+  with st.form("edit_cliente"):
+   tipo = st.selectbox("Tipo de cliente", ["Natural","Jurídica"], index=0 if str(fila.get('TipoCliente','Natural'))!='Jurídica' else 1)
+   nombre = st.text_input("Nombre (Persona Natural)", value=str(fila.get("Nombre","")))
+   dni = st.text_input("DNI", value=str(fila.get("DNI","")))
+   celular = st.text_input("Celular", value=str(fila.get("Celular","")))
+   correo = st.text_input("Correo", value=str(fila.get("Correo","")))
+   direccion = st.text_input("Dirección", value=str(fila.get("Direccion","")))
+   contacto_em = st.text_input("Contacto de emergencia", value=str(fila.get("ContactoEmergencia","")))
+   cel_em = st.text_input("Celular de emergencia", value=str(fila.get("CelularEmergencia","")))
+   st.markdown("**Datos de Persona Jurídica (si corresponde)**")
+   razon = st.text_input("Razón Social", value=str(fila.get("RazonSocial","")))
+   ruc = st.text_input("RUC", value=str(fila.get("RUC","")))
+   rep = st.text_input("Representante Legal", value=str(fila.get("RepresentanteLegal","")))
+   partida = st.text_input("Partida Electrónica", value=str(fila.get("PartidaElectronica","")))
+   sede = st.text_input("Sede Registral", value=str(fila.get("SedeRegistral","")))
+   obs = st.text_area("Observaciones", value=str(fila.get("Observaciones","")))
+   submit = st.form_submit_button("Guardar cambios", disabled=is_readonly)
+  if submit:
+   idx = df_cli.index[df_cli["ID"] == sel][0]
+   df_cli.loc[idx, [
+    "TipoCliente","Nombre","DNI","Celular","Correo","Direccion","Observaciones",
+    "ContactoEmergencia","CelularEmergencia",
+    "RazonSocial","RUC","RepresentanteLegal","PartidaElectronica","SedeRegistral"
+   ]] = [
+    tipo, nombre, dni, celular, correo, direccion, obs,
+    contacto_em, cel_em,
+    (razon if tipo=="Jurídica" else ""),
+    (ruc if tipo=="Jurídica" else ""),
+    (rep if tipo=="Jurídica" else ""),
+    (partida if tipo=="Jurídica" else ""),
+    (sede if tipo=="Jurídica" else "")
+   ]
+   save_df("clientes", df_cli)
+   try: _audit_log('UPDATE','clientes', sel, nombre)
+   except Exception: pass
+   st.success("✅ Actualizado")
+   st.rerun()
+ elif accion == "Eliminar" and not df_cli.empty:
+  sel = st.selectbox("Cliente ID a eliminar", df_cli["ID"].tolist(), key='cli_del_id')
+  if st.button("Eliminar cliente", disabled=is_readonly, key='cli_del_btn'):
+   df_cli = df_cli[df_cli["ID"] != sel].copy()
+   save_df("clientes", df_cli)
+   try: _audit_log('DELETE','clientes', sel, '')
+   except Exception: pass
+   st.success("✅ Eliminado")
+   st.rerun()
+ st.dataframe(df_cli, use_container_width=True)
+ st.download_button("⬇️ Descargar clientes (CSV)", df_cli.to_csv(index=False).encode("utf-8"), "clientes.csv")
 
 # ==========================================================
-# ABOGADOS (CRUD)
+# ABOGADOS (CRUD) – con Colegio Profesional, Distrito Judicial, Referencia y Notas
 # ==========================================================
 if menu == "Abogados":
-    st.subheader("👨‍⚖️ Abogados")
-    accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True)
-
-    if accion == "Nuevo":
-        with st.form("nuevo_abogado"):
-            nombre = st.text_input("Nombre")
-            dni = st.text_input("DNI")
-            celular = st.text_input("Celular")
-            correo = st.text_input("Correo")
-            coleg = st.text_input("Colegiatura")
-            dom = st.text_input("Domicilio Procesal")
-            cas_e = st.text_input("Casilla Electrónica")
-            cas_j = st.text_input("Casilla Judicial")
-            submit = st.form_submit_button("Guardar")
-            if submit:
-                new_id = next_id(abogados)
-                abogados = add_row(abogados, {
-                    "ID": new_id,"Nombre": nombre,"DNI": dni,"Celular": celular,"Correo": correo,
-                    "Colegiatura": coleg,"Domicilio Procesal": dom,"Casilla Electronica": cas_e,"Casilla Judicial": cas_j
-                }, "abogados")
-                save_df("abogados", abogados)
-                st.success("✅ Abogado registrado")
-                st.rerun()
-
-    elif accion == "Editar" and not abogados.empty:
-        sel = st.selectbox("Abogado ID", abogados["ID"].tolist())
-        fila = abogados[abogados["ID"] == sel].iloc[0]
-        with st.form("edit_abogado"):
-            nombre = st.text_input("Nombre", value=str(fila["Nombre"]))
-            dni = st.text_input("DNI", value=str(fila["DNI"]))
-            celular = st.text_input("Celular", value=str(fila["Celular"]))
-            correo = st.text_input("Correo", value=str(fila["Correo"]))
-            coleg = st.text_input("Colegiatura", value=str(fila["Colegiatura"]))
-            dom = st.text_input("Domicilio Procesal", value=str(fila["Domicilio Procesal"]))
-            cas_e = st.text_input("Casilla Electrónica", value=str(fila["Casilla Electronica"]))
-            cas_j = st.text_input("Casilla Judicial", value=str(fila["Casilla Judicial"]))
-            submit = st.form_submit_button("Guardar cambios")
-            if submit:
-                idx = abogados.index[abogados["ID"] == sel][0]
-                abogados.loc[idx, :] = [sel, nombre, dni, celular, correo, coleg, dom, cas_e, cas_j]
-                save_df("abogados", abogados)
-                st.success("✅ Actualizado")
-                st.rerun()
-
-    elif accion == "Eliminar" and not abogados.empty:
-        sel = st.selectbox("Abogado ID a eliminar", abogados["ID"].tolist())
-        if st.button("Eliminar abogado"):
-            abogados = abogados[abogados["ID"] != sel].copy()
-            save_df("abogados", abogados)
-            st.success("✅ Eliminado")
-            st.rerun()
-
-    st.dataframe(abogados, use_container_width=True)
-    st.download_button("⬇️ Descargar abogados (CSV)", abogados.to_csv(index=False).encode("utf-8"), "abogados.csv")
+ st.subheader("👨‍⚖️ Abogados")
+ df_ab = load_df("abogados")
+ is_readonly = st.session_state.get('rol') == 'asistente'
+ accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True)
+ if accion == "Nuevo":
+  with st.form("nuevo_abogado"):
+   nombre = st.text_input("Nombre")
+   dni = st.text_input("DNI")
+   celular = st.text_input("Celular")
+   correo = st.text_input("Correo")
+   coleg = st.text_input("Colegiatura")
+   colegio_prof = st.text_input("Colegio Profesional")
+   dom = st.text_input("Domicilio Procesal")
+   referencia = st.text_input("Referencia domicilio procesal")
+   cas_e = st.text_input("Casilla Electrónica")
+   distrito = st.text_input("Distrito Judicial")
+   cas_j = st.text_input("Casilla Judicial")
+   notas = st.text_area("Notas", height=120)
+   submit = st.form_submit_button("Guardar", disabled=is_readonly)
+  if submit:
+   new_id = next_id(df_ab)
+   df_ab = add_row(df_ab, {
+    "ID": new_id,
+    "Nombre": nombre,
+    "DNI": dni,
+    "Celular": celular,
+    "Correo": correo,
+    "Colegiatura": coleg,
+    "ColegioProfesional": colegio_prof,
+    "Domicilio Procesal": dom,
+    "ReferenciaDomicilio": referencia,
+    "Casilla Electronica": cas_e,
+    "DistritoJudicial": distrito,
+    "Casilla Judicial": cas_j,
+    "Notas": notas,
+   }, "abogados")
+   save_df("abogados", df_ab)
+   try: _audit_log('ADD','abogados', new_id, nombre)
+   except Exception: pass
+   st.success("✅ Abogado registrado")
+   st.rerun()
+ elif accion == "Editar" and not df_ab.empty:
+  sel = st.selectbox("Abogado ID", df_ab["ID"].tolist(), key='ab_edit_id')
+  fila = df_ab[df_ab["ID"] == sel].iloc[0]
+  with st.form("edit_abogado"):
+   nombre = st.text_input("Nombre", value=str(fila.get("Nombre","")))
+   dni = st.text_input("DNI", value=str(fila.get("DNI","")))
+   celular = st.text_input("Celular", value=str(fila.get("Celular","")))
+   correo = st.text_input("Correo", value=str(fila.get("Correo","")))
+   coleg = st.text_input("Colegiatura", value=str(fila.get("Colegiatura","")))
+   colegio_prof = st.text_input("Colegio Profesional", value=str(fila.get("ColegioProfesional","")))
+   dom = st.text_input("Domicilio Procesal", value=str(fila.get("Domicilio Procesal","")))
+   referencia = st.text_input("Referencia domicilio procesal", value=str(fila.get("ReferenciaDomicilio","")))
+   cas_e = st.text_input("Casilla Electrónica", value=str(fila.get("Casilla Electronica","")))
+   distrito = st.text_input("Distrito Judicial", value=str(fila.get("DistritoJudicial","")))
+   cas_j = st.text_input("Casilla Judicial", value=str(fila.get("Casilla Judicial","")))
+   notas = st.text_area("Notas", value=str(fila.get("Notas","")), height=120)
+   submit = st.form_submit_button("Guardar cambios", disabled=is_readonly)
+  if submit:
+   idx = df_ab.index[df_ab["ID"] == sel][0]
+   df_ab.loc[idx, [
+    "Nombre","DNI","Celular","Correo","Colegiatura",
+    "ColegioProfesional","Domicilio Procesal","ReferenciaDomicilio",
+    "Casilla Electronica","DistritoJudicial","Casilla Judicial","Notas"
+   ]] = [
+    nombre,dni,celular,correo,coleg,
+    colegio_prof,dom,referencia,
+    cas_e,distrito,cas_j,notas
+   ]
+   save_df("abogados", df_ab)
+   try: _audit_log('UPDATE','abogados', sel, nombre)
+   except Exception: pass
+   st.success("✅ Actualizado")
+   st.rerun()
+ elif accion == "Eliminar" and not df_ab.empty:
+  sel = st.selectbox("Abogado ID a eliminar", df_ab["ID"].tolist(), key='ab_del_id')
+  if st.button("Eliminar abogado", disabled=is_readonly, key='ab_del_btn'):
+   df_ab = df_ab[df_ab["ID"] != sel].copy()
+   save_df("abogados", df_ab)
+   try: _audit_log('DELETE','abogados', sel, '')
+   except Exception: pass
+   st.success("✅ Eliminado")
+   st.rerun()
+ st.dataframe(df_ab, use_container_width=True)
+ st.download_button("⬇️ Descargar abogados (CSV)", df_ab.to_csv(index=False).encode("utf-8"), "abogados.csv")
 
 # ==========================================================
-# CASOS (CRUD) — incluye Instancia
+# CASOS (CRUD) — incluye datos judiciales completos
 # ==========================================================
 if menu == "Casos":
-    st.subheader("📁 Casos")
-    accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True)
+ st.subheader("📁 Casos")
+ df_casos = load_df("casos")
+ is_readonly = st.session_state.get('rol') == 'asistente'
+ accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True)
+ clientes_list = load_df("clientes")["Nombre"].tolist() if not load_df("clientes").empty else []
+ abogados_list = load_df("abogados")["Nombre"].tolist() if not load_df("abogados").empty else []
+ if accion == "Nuevo":
+  if not clientes_list:
+   st.warning("Primero registra clientes.")
+  elif not abogados_list:
+   st.warning("Primero registra abogados.")
+  else:
+   with st.form("nuevo_caso"):
+    cliente = st.selectbox("Cliente", clientes_list)
+    abogado = st.selectbox("Abogado", abogados_list)
+    expediente = st.text_input("Expediente")
+    anio = st.text_input("Año")
+    materia = st.text_input("Materia")
+    instancia = st.selectbox("Instancia", ETAPAS_HONORARIOS)
+    pret = st.text_input("Pretensión")
+    juzgado = st.text_input("Juzgado")
+    distrito_jud = st.text_input("Distrito Judicial")
+    contraparte = st.text_input("Contraparte")
+    contraparte_doc = st.text_input("DNI/RUC Contraparte")
+    obs = st.text_area("Observaciones")
+    estado = st.selectbox("EstadoCaso", ["Activo","En pausa","Cerrado","Archivado"])
+    fi = st.date_input("Fecha inicio", value=date.today())
+    submit = st.form_submit_button("Guardar", disabled=is_readonly)
+   if submit:
+    new_id = next_id(df_casos)
+    df_casos = add_row(df_casos, {
+     "ID": new_id,
+     "Cliente": cliente,
+     "Abogado": abogado,
+     "Expediente": normalize_key(expediente),
+     "Año": anio,
+     "Materia": materia,
+     "Instancia": instancia,
+     "Pretension": pret,
+     "Juzgado": juzgado,
+     "DistritoJudicial": distrito_jud,
+     "Contraparte": contraparte,
+     "ContraparteDoc": contraparte_doc,
+     "Observaciones": obs,
+     "EstadoCaso": estado,
+     "FechaInicio": str(fi)
+    }, "casos")
+    save_df("casos", df_casos)
+    try: _audit_log('ADD','casos', new_id, expediente)
+    except Exception: pass
+    st.success("✅ Caso registrado")
+    st.rerun()
+ elif accion == "Editar" and not df_casos.empty:
+  exp_sel = st.selectbox("Expediente", df_casos["Expediente"].tolist(), key='cas_edit_exp')
+  fila = df_casos[df_casos["Expediente"] == exp_sel].iloc[0]
+  with st.form("edit_caso"):
+   cliente = st.selectbox("Cliente", clientes_list, index=clientes_list.index(fila.get('Cliente','')) if fila.get('Cliente','') in clientes_list else 0)
+   abogado = st.selectbox("Abogado", abogados_list, index=abogados_list.index(fila.get('Abogado','')) if fila.get('Abogado','') in abogados_list else 0)
+   anio = st.text_input("Año", value=str(fila.get('Año','')))
+   materia = st.text_input("Materia", value=str(fila.get('Materia','')))
+   instancia = st.selectbox("Instancia", ETAPAS_HONORARIOS, index=ETAPAS_HONORARIOS.index(fila.get('Instancia','')) if fila.get('Instancia','') in ETAPAS_HONORARIOS else 0)
+   pret = st.text_input("Pretensión", value=str(fila.get('Pretension','')))
+   juzgado = st.text_input("Juzgado", value=str(fila.get('Juzgado','')))
+   distrito_jud = st.text_input("Distrito Judicial", value=str(fila.get('DistritoJudicial','')))
+   contraparte = st.text_input("Contraparte", value=str(fila.get('Contraparte','')))
+   contraparte_doc = st.text_input("DNI/RUC Contraparte", value=str(fila.get('ContraparteDoc','')))
+   obs = st.text_area("Observaciones", value=str(fila.get('Observaciones','')))
+   estado = st.selectbox("EstadoCaso", ["Activo","En pausa","Cerrado","Archivado"], index=["Activo","En pausa","Cerrado","Archivado"].index(fila.get('EstadoCaso','Activo')) if fila.get('EstadoCaso','Activo') in ["Activo","En pausa","Cerrado","Archivado"] else 0)
+   submit = st.form_submit_button("Guardar cambios", disabled=is_readonly)
+  if submit:
+   idx = df_casos.index[df_casos["Expediente"] == exp_sel][0]
+   df_casos.loc[idx, [
+    "Cliente","Abogado","Año","Materia","Instancia","Pretension",
+    "Juzgado","DistritoJudicial","Contraparte","ContraparteDoc","Observaciones","EstadoCaso"
+   ]] = [
+    cliente, abogado, anio, materia, instancia, pret,
+    juzgado, distrito_jud, contraparte, contraparte_doc, obs, estado
+   ]
+   save_df("casos", df_casos)
+   try: _audit_log('UPDATE','casos', exp_sel, 'edit')
+   except Exception: pass
+   st.success("✅ Caso actualizado")
+   st.rerun()
+ elif accion == "Eliminar" and not df_casos.empty:
+  exp_sel = st.selectbox("Expediente a eliminar", df_casos["Expediente"].tolist(), key='cas_del_exp')
+  st.warning("⚠️ Esta acción no se puede deshacer")
+  if st.button("Eliminar caso", disabled=is_readonly, key='cas_del_btn'):
+   df_casos = df_casos[df_casos["Expediente"] != exp_sel].copy()
+   save_df("casos", df_casos)
+   try: _audit_log('DELETE','casos', exp_sel, '')
+   except Exception: pass
+   st.success("✅ Caso eliminado")
+   st.rerun()
+ st.dataframe(df_casos, use_container_width=True)
+ st.download_button("⬇️ Descargar casos (CSV)", df_casos.to_csv(index=False).encode("utf-8"), "casos.csv")
 
-    clientes_list = clientes["Nombre"].tolist() if not clientes.empty else []
-    abogados_list = abogados["Nombre"].tolist() if not abogados.empty else []
-
-    if accion == "Nuevo":
-        if not clientes_list:
-            st.warning("Primero registra clientes.")
-        elif not abogados_list:
-            st.warning("Primero registra abogados.")
-        else:
-            with st.form("nuevo_caso"):
-                cliente = st.selectbox("Cliente", clientes_list)
-                abogado = st.selectbox("Abogado", abogados_list)
-                expediente = st.text_input("Expediente")
-                anio = st.text_input("Año")
-                materia = st.text_input("Materia")
-                instancia = st.selectbox("Instancia", ETAPAS_HONORARIOS)
-                pret = st.text_input("Pretensión")
-                obs = st.text_area("Observaciones")
-                estado = st.selectbox("EstadoCaso", ["Activo","En pausa","Cerrado","Archivado"])
-                fi = st.date_input("Fecha inicio", value=date.today())
-                submit = st.form_submit_button("Guardar")
-                if submit:
-                    new_id = next_id(casos)
-                    casos = add_row(casos, {
-                        "ID": new_id,
-                        "Cliente": cliente,
-                        "Abogado": abogado,
-                        "Expediente": normalize_key(expediente),
-                        "Año": anio,
-                        "Materia": materia,
-                        "Instancia": instancia,
-                        "Pretension": pret,
-                        "Observaciones": obs,
-                        "EstadoCaso": estado,
-                        "FechaInicio": str(fi)
-                    }, "casos")
-                    save_df("casos", casos)
-                    st.success("✅ Caso registrado")
-                    st.rerun()
-
-    st.dataframe(casos, use_container_width=True)
-    st.download_button("⬇️ Descargar casos (CSV)", casos.to_csv(index=False).encode("utf-8"), "casos.csv")
-
-# ==========================================================
 # HONORARIOS (Total + Por etapa) + ✅ EDITAR/BORRAR
 # ==========================================================
 if menu == "Honorarios":
@@ -1588,80 +1717,6 @@ def generar_docx(texto: str, titulo="Contrato"):
     doc.save(buffer)
     buffer.seek(0)
     return buffer
-
-# ==========================================================
-# GENERAR CONTRATO (TXT + WORD) + NUMERACIÓN OFICIAL AL FIRMAR
-# - Se genera borrador (sin número) en generados/
-# - Solo al marcar como FIRMADO se asigna correlativo y se renombra
-# ==========================================================
-
-def _ensure_contratos_csv():
-    """Asegura contratos.csv con columnas mínimas."""
-    try:
-        ensure_csv('contratos')
-    except Exception:
-        pass
-
-
-def _next_contract_number(sigla: str, anio: int) -> int:
-    _ensure_contratos_csv()
-    try:
-        df = load_df('contratos')
-    except Exception:
-        df = pd.DataFrame(columns=SCHEMAS.get('contratos', ['ID','Numero','Año','Sigla','NombreContrato','Caso','Cliente','Abogado','Estado','Archivo','Fecha']))
-    if df.empty or 'Numero' not in df.columns:
-        return 1
-    tmp = df.copy()
-    tmp['Año'] = pd.to_numeric(tmp.get('Año', ''), errors='coerce').fillna(0).astype(int)
-    tmp['Numero'] = pd.to_numeric(tmp.get('Numero',''), errors='coerce').fillna(0).astype(int)
-    tmp = tmp[(tmp['Año']==int(anio)) & (tmp.get('Sigla','').astype(str)==str(sigla)) & (tmp.get('Estado','').astype(str)=='Firmado')]
-    return int(tmp['Numero'].max()) + 1 if not tmp.empty else 1
-
-
-def _registrar_contrato_firmado(numero:int, anio:int, sigla:str, nombre_contrato:str, exp:str, cliente:str, abogado:str, archivo:str):
-    _ensure_contratos_csv()
-    try:
-        df = load_df('contratos')
-    except Exception:
-        df = pd.DataFrame(columns=SCHEMAS.get('contratos', ['ID','Numero','Año','Sigla','NombreContrato','Caso','Cliente','Abogado','Estado','Archivo','Fecha']))
-    new_id = next_id(df) if 'ID' in df.columns else len(df)+1
-    row = {
-        'ID': new_id,
-        'Numero': int(numero),
-        'Año': int(anio),
-        'Sigla': str(sigla),
-        'NombreContrato': str(nombre_contrato),
-        'Caso': normalize_key(exp),
-        'Cliente': str(cliente),
-        'Abogado': str(abogado),
-        'Estado': 'Firmado',
-        'Archivo': str(archivo),
-        'Fecha': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    }
-    try:
-        df = add_row(df, row, 'contratos')
-    except Exception:
-        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
-    save_df('contratos', df)
-    try:
-        _audit_log('ADD', 'contratos', new_id, f'{numero}-{anio}-{sigla} {nombre_contrato} {exp}')
-    except Exception:
-        pass
-
-
-def _guardar_borrador_generados(nombre_base:str, texto:str, docx_buf):
-    os.makedirs(GENERADOS_DIR, exist_ok=True)
-    out_txt = os.path.join(GENERADOS_DIR, f"{nombre_base}.txt")
-    with open(out_txt, 'w', encoding='utf-8') as f:
-        f.write(texto)
-    out_docx = None
-    if docx_buf is not None:
-        out_docx = os.path.join(GENERADOS_DIR, f"{nombre_base}.docx")
-        with open(out_docx, 'wb') as f:
-            f.write(docx_buf.getbuffer())
-    return out_txt, out_docx
-
-
 if menu == "Generar Contrato":
     st.subheader("📄 Generar contrato automáticamente")
     if casos.empty:
@@ -1673,43 +1728,30 @@ if menu == "Generar Contrato":
         tpl_id = st.selectbox("Plantilla ID", plantillas["ID"].tolist(), key="gc_tpl")
         tpl = plantillas[plantillas["ID"] == tpl_id].iloc[0]
 
-        # nombre contrato (editable)
-        nombre_contrato = st.text_input("Nombre del contrato", value=str(tpl.get('Nombre','Contrato')))
-        sigla = st.text_input("Sigla", value="CLS")
-
         ctx = build_context(exp)
         generado = render_template(str(tpl["Contenido"]), ctx)
+
         st.text_area("Vista previa", value=generado, height=350)
-
-        # NOMBRE_BASE BORRADOR (sin numeración)
-        nombre_base = f"{nombre_contrato.replace(' ','_')}_BORRADOR_{exp.replace('/','_')}"
-
-        st.download_button("⬇️ Descargar (TXT)", data=generado.encode('utf-8'), file_name=f"{nombre_base}.txt")
-
-        docx_file = generar_docx(generado, titulo=str(nombre_contrato))
+        nombre_archivo = f"Contrato_{exp.replace('/','_')}_{str(tpl['Nombre']).replace(' ','_')}.txt"
+        st.download_button("⬇️ Descargar contrato (TXT)", data=generado.encode("utf-8"), file_name=nombre_archivo)
+        docx_file = generar_docx(generado, titulo=str(tpl.get("Nombre","Contrato")))
         if docx_file is None:
             st.warning("⚠️ No se pudo generar Word. Falta instalar python-docx en requirements.txt")
         else:
             st.download_button(
-                "⬇️ Descargar (WORD)",
+                "⬇️ Descargar contrato (WORD)",
                 data=docx_file,
-                file_name=f"{nombre_base}.docx",
+                file_name=nombre_archivo.replace(".txt", ".docx"),
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 key=f"download_word_{exp}_{tpl_id}"
             )
 
-        if st.button("💾 Guardar BORRADOR en generados/", key="gc_save"):
-            out_txt, out_docx = _guardar_borrador_generados(nombre_base, generado, docx_file)
-            st.success("✅ Borrador guardado en generados/")
-            st.info(out_txt)
-            if out_docx:
-                st.info(out_docx)
+        if st.button("💾 Guardar en carpeta generados/", key="gc_save"):
+            out_path = os.path.join(GENERADOS_DIR, nombre_archivo)
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(generado)
+            st.success(f"✅ Guardado en {out_path}")
 
-            # registrar/actualizar repositorio contratos (borrador)
-            try:
-                _repo_sync_contratos()  # función definida en módulo Repositorio Contratos
-            except Exception:
-                pass
 # ==========================================================
 # USUARIOS
 # ==========================================================
@@ -2270,7 +2312,7 @@ try:
         if casos.empty:
             st.info('No hay casos registrados.')
         else:
-            exp = st.selectbox('Expediente', casos['Expediente'].tolist(), key='inst_exp')
+            exp = st.selectbox('Expediente', casos['Expediente'].tolist(), key='instancias_exp')
             sub = df_i[df_i['Caso'].astype(str) == str(exp)].copy()
             st.markdown('### Registradas')
             st.dataframe(sub.sort_values('ID', ascending=False), use_container_width=True)
@@ -2393,12 +2435,10 @@ def generar_docx(texto: str, titulo="Contrato"):
     buffer.seek(0)
     return buffer
 
-
-
 # ==========================================================
-# MÓDULO: REPOSITORIO CONTRATOS (Borrador/Firmado) + NUMERACIÓN
-# - Visible=0 significa "Quitado del repositorio" (no revive)
-# - Al firmar: asigna correlativo solo a firmados (no cuenta borradores)
+# REPOSITORIO CONTRATOS – Borrador/Firmado + Numeración oficial
+# - Borradores NO consumen número
+# - Al firmar: asigna correlativo y renombra archivo a: NOMBRE N° XXXX-AÑO-CLS
 # ==========================================================
 
 REPO_CONTRATOS_FILE = os.path.join(DATA_DIR, 'repo_contratos.csv')
@@ -2419,6 +2459,8 @@ def _repo_contratos_ensure():
     for c in REPO_CONTRATOS_SCHEMA:
         if c not in df.columns:
             df[c] = ''
+    if 'Visible' not in df.columns:
+        df['Visible'] = '1'
     df = df.reindex(columns=REPO_CONTRATOS_SCHEMA)
     df.to_csv(REPO_CONTRATOS_FILE, index=False)
 
@@ -2433,6 +2475,8 @@ def _repo_contratos_load():
     for c in REPO_CONTRATOS_SCHEMA:
         if c not in df.columns:
             df[c] = ''
+    if 'Visible' not in df.columns:
+        df['Visible'] = '1'
     return df.reindex(columns=REPO_CONTRATOS_SCHEMA)
 
 
@@ -2445,15 +2489,24 @@ def _repo_contratos_save(df):
     for c in REPO_CONTRATOS_SCHEMA:
         if c not in df.columns:
             df[c] = ''
+    if 'Visible' not in df.columns:
+        df['Visible'] = '1'
     df = df.reindex(columns=REPO_CONTRATOS_SCHEMA)
     df.to_csv(REPO_CONTRATOS_FILE, index=False)
 
 
-def _repo_hash(path):
-    return _file_sha256(path) if '_file_sha256' in globals() else ''
+def _repo_file_sha(path: str) -> str:
+    h = hashlib.sha256()
+    try:
+        with open(path, 'rb') as f:
+            for chunk in iter(lambda: f.read(1024*1024), b''):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return ''
 
 
-def _scan_contratos_generados():
+def _repo_scan_generados():
     os.makedirs(GENERADOS_DIR, exist_ok=True)
     out = []
     for fn in os.listdir(GENERADOS_DIR):
@@ -2463,66 +2516,54 @@ def _scan_contratos_generados():
         if not os.path.isfile(path):
             continue
         ext = os.path.splitext(fn)[1].lower().replace('.','').upper()
-        # infer expediente: buscar algo tipo _<exp> al final
+
+        # Infer nombre / expediente (robusto para nuestros nombres BORRADOR)
+        nombre = fn
         expediente = ''
-        m = re.search(r'_(\d{4}|\d{2,})', fn)
-        # mejor: si contiene BORRADOR_<exp>
-        m2 = re.search(r'BORRADOR_(.+?)(\.|$)', fn)
-        if m2:
-            expediente = m2.group(1).replace('__','_')
-        # nombre contrato: antes de _BORRADOR
-        nombre_contrato = fn
         if '_BORRADOR_' in fn:
-            nombre_contrato = fn.split('_BORRADOR_')[0].replace('_',' ')
-        # buscar caso
-        cliente = ''
-        abogado = ''
+            nombre = fn.split('_BORRADOR_')[0].replace('_',' ')
+            expediente = fn.split('_BORRADOR_')[-1].split('.')[0].replace('__','_')
+
+        cliente, abogado = '', ''
         try:
             if 'casos' in globals() and not casos.empty and expediente:
-                row = casos[casos['Expediente'].astype(str)==str(expediente)].iloc[0]
-                cliente = str(row.get('Cliente',''))
-                abogado = str(row.get('Abogado',''))
+                r = casos[casos['Expediente'].astype(str)==str(expediente)].iloc[0]
+                cliente = str(r.get('Cliente',''))
+                abogado = str(r.get('Abogado',''))
         except Exception:
             pass
+
         try:
             mtime = os.path.getmtime(path)
             fc = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
         except Exception:
             fc = ''
+
         out.append({
-            'Archivo': fn,
-            'Ruta': path,
-            'Extension': ext,
-            'Expediente': expediente,
-            'Cliente': cliente,
-            'Abogado': abogado,
-            'NombreContrato': nombre_contrato,
-            'FechaCreado': fc,
-            'Hash': _repo_hash(path),
-            'Existe': '1'
+            'Archivo': fn,'Ruta': path,'Extension': ext,
+            'Expediente': expediente,'Cliente': cliente,'Abogado': abogado,
+            'NombreContrato': nombre,'FechaCreado': fc,
+            'Hash': _repo_file_sha(path),'Existe': '1'
         })
     return out
 
 
 def _repo_sync_contratos():
     repo = _repo_contratos_load()
-    if repo.empty:
-        repo = pd.DataFrame(columns=REPO_CONTRATOS_SCHEMA)
-    scanned = _scan_contratos_generados()
-    scanned_by_file = {r['Archivo']: r for r in scanned}
+    scanned = _repo_scan_generados()
+    scanned_by = {r['Archivo']: r for r in scanned}
 
-    # marcar existencia
     if not repo.empty:
         repo['Existe'] = '0'
         for i in repo.index:
             fn = str(repo.at[i,'Archivo'])
-            if fn in scanned_by_file:
+            if fn in scanned_by:
                 repo.at[i,'Existe'] = '1'
-                for k in ['Ruta','Hash','FechaCreado','Extension']:
-                    repo.at[i,k] = scanned_by_file[fn].get(k, repo.at[i,k])
+                for k in ['Ruta','Extension','Hash','FechaCreado','Cliente','Abogado','Expediente','NombreContrato']:
+                    repo.at[i,k] = scanned_by[fn].get(k, repo.at[i,k])
 
     existing = set(repo['Archivo'].astype(str).tolist()) if not repo.empty else set()
-    nid = int(pd.to_numeric(repo['ID'], errors='coerce').max() or 0) + 1
+    nid = int(pd.to_numeric(repo.get('ID', pd.Series([0])), errors='coerce').max() or 0) + 1
 
     new_rows = []
     for r in scanned:
@@ -2552,7 +2593,6 @@ def _repo_sync_contratos():
     if new_rows:
         repo = pd.concat([repo, pd.DataFrame(new_rows)], ignore_index=True)
 
-    # asegurar columnas
     for c in REPO_CONTRATOS_SCHEMA:
         if c not in repo.columns:
             repo[c] = ''
@@ -2561,33 +2601,70 @@ def _repo_sync_contratos():
     return repo
 
 
-def _repo_contratos_firmar(repo: pd.DataFrame, sel_id: int, sigla: str = 'CLS'):
-    idx = repo.index[repo['ID'] == sel_id][0]
+def _repo_next_num(sigla: str, anio: int) -> int:
+    try:
+        df = load_df('contratos')
+    except Exception:
+        df = pd.DataFrame(columns=['ID','Numero','Año','Sigla','NombreContrato','Caso','Cliente','Abogado','Estado','Archivo','Fecha'])
+    if df.empty:
+        return 1
+    tmp = df.copy()
+    tmp['Año'] = pd.to_numeric(tmp.get('Año',''), errors='coerce').fillna(0).astype(int)
+    tmp['Numero'] = pd.to_numeric(tmp.get('Numero',''), errors='coerce').fillna(0).astype(int)
+    tmp = tmp[(tmp['Año']==int(anio)) & (tmp.get('Sigla','').astype(str)==str(sigla)) & (tmp.get('Estado','').astype(str)=='Firmado')]
+    return int(tmp['Numero'].max()) + 1 if not tmp.empty else 1
+
+
+def _repo_registrar_contrato(numero:int, anio:int, sigla:str, nombre:str, exp:str, cliente:str, abogado:str, archivo:str):
+    try:
+        ensure_csv('contratos')
+        df = load_df('contratos')
+    except Exception:
+        df = pd.DataFrame(columns=['ID','Numero','Año','Sigla','NombreContrato','Caso','Cliente','Abogado','Estado','Archivo','Fecha'])
+    new_id = next_id(df) if 'ID' in df.columns else len(df)+1
+    row = {
+        'ID': new_id,
+        'Numero': int(numero),
+        'Año': int(anio),
+        'Sigla': str(sigla),
+        'NombreContrato': str(nombre),
+        'Caso': normalize_key(exp),
+        'Cliente': str(cliente),
+        'Abogado': str(abogado),
+        'Estado': 'Firmado',
+        'Archivo': str(archivo),
+        'Fecha': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    try:
+        df = add_row(df, row, 'contratos')
+    except Exception:
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+    save_df('contratos', df)
+
+
+def _repo_firmar(repo: pd.DataFrame, sel_id: int, sigla: str):
+    idx = repo.index[repo['ID']==sel_id][0]
     if str(repo.at[idx,'Estado']) == 'Firmado':
         return repo
 
-    exp = str(repo.at[idx,'Expediente'])
-    nombre = str(repo.at[idx,'NombreContrato'] or 'Contrato')
     anio = date.today().year
+    numero = _repo_next_num(sigla, anio)
+    nombre = str(repo.at[idx,'NombreContrato'] or 'Contrato')
 
-    numero = _next_contract_number(sigla, anio) if '_next_contract_number' in globals() else 1
-
-    # renombrar archivos físicos (si existen)
-    base_nuevo = f"{nombre.replace(' ','_')} N° {numero:04d}-{anio}-{sigla}"
-
+    # Renombrar archivo físico
     old_path = str(repo.at[idx,'Ruta'])
     old_file = str(repo.at[idx,'Archivo'])
     ext = os.path.splitext(old_file)[1]
-    new_file = base_nuevo + ext
+    base = f"{nombre.replace(' ','_')} N° {numero:04d}-{anio}-{sigla}"
+    new_file = base + ext
     new_path = os.path.join(GENERADOS_DIR, new_file)
 
     try:
-        if os.path.exists(old_path):
+        if old_path and os.path.exists(old_path):
             os.rename(old_path, new_path)
             repo.at[idx,'Ruta'] = new_path
             repo.at[idx,'Archivo'] = new_file
     except Exception:
-        # si falla, mantenemos original
         pass
 
     repo.at[idx,'Estado'] = 'Firmado'
@@ -2596,18 +2673,13 @@ def _repo_contratos_firmar(repo: pd.DataFrame, sel_id: int, sigla: str = 'CLS'):
     repo.at[idx,'Sigla'] = str(sigla)
     repo.at[idx,'FechaFirmado'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    # registrar en contratos.csv
-    try:
-        _registrar_contrato_firmado(numero, anio, sigla, nombre, exp, repo.at[idx,'Cliente'], repo.at[idx,'Abogado'], repo.at[idx,'Archivo'])
-    except Exception:
-        pass
-
+    _repo_registrar_contrato(numero, anio, sigla, nombre, repo.at[idx,'Expediente'], repo.at[idx,'Cliente'], repo.at[idx,'Abogado'], repo.at[idx,'Archivo'])
     _repo_contratos_save(repo)
     return repo
 
 
-def _repo_contratos_borrador(repo: pd.DataFrame, sel_id: int):
-    idx = repo.index[repo['ID'] == sel_id][0]
+def _repo_borrador(repo: pd.DataFrame, sel_id: int):
+    idx = repo.index[repo['ID']==sel_id][0]
     repo.at[idx,'Estado'] = 'Borrador'
     repo.at[idx,'FechaFirmado'] = ''
     repo.at[idx,'Numero'] = ''
@@ -2616,43 +2688,43 @@ def _repo_contratos_borrador(repo: pd.DataFrame, sel_id: int):
     return repo
 
 
-def _repo_contratos_quitar(repo: pd.DataFrame, sel_id: int):
-    idx = repo.index[repo['ID'] == sel_id][0]
+def _repo_quitar(repo: pd.DataFrame, sel_id: int):
+    idx = repo.index[repo['ID']==sel_id][0]
     repo.at[idx,'Visible'] = '0'
     _repo_contratos_save(repo)
     return repo
 
 
-def _repo_contratos_restaurar(repo: pd.DataFrame, sel_id: int):
-    idx = repo.index[repo['ID'] == sel_id][0]
+def _repo_restaurar(repo: pd.DataFrame, sel_id: int):
+    idx = repo.index[repo['ID']==sel_id][0]
     repo.at[idx,'Visible'] = '1'
     _repo_contratos_save(repo)
     return repo
 
 
 if 'menu' in globals() and menu == 'Repositorio Contratos':
-    st.subheader('📦 Repositorio de Contratos (Borrador/Firmado)')
-    c1, c2 = st.columns([1,1])
-    with c1:
-        if st.button('🔄 Sincronizar generados/ → repositorio'):
+    st.subheader('📦 Repositorio de Contratos')
+
+    col1, col2 = st.columns([1,1])
+    with col1:
+        if st.button('🔄 Sincronizar desde generados/', key='rc_sync'):
             _repo_sync_contratos()
             st.success('✅ Sincronizado')
             st.rerun()
-    with c2:
-        st.download_button('⬇️ Descargar repositorio (CSV)', _repo_contratos_load().to_csv(index=False).encode('utf-8'), 'repo_contratos.csv')
+    with col2:
+        st.download_button('⬇️ Descargar repositorio (CSV)', _repo_contratos_load().to_csv(index=False).encode('utf-8'), 'repo_contratos.csv', key='rc_export')
 
     repo = _repo_contratos_load()
     if repo.empty:
-        st.info('No hay contratos en repositorio. Guarda un borrador desde "Generar Contrato" y sincroniza.')
+        st.info('No hay contratos aún. Guarda un borrador y sincroniza.')
     else:
-        # filtros
         f1,f2,f3 = st.columns([1,1,2])
         with f1:
-            est = st.selectbox('Estado', ['Todos','Borrador','Firmado'], key='rc_est')
+            est = st.selectbox('Estado', ['Todos','Borrador','Firmado'], key='rc_estado')
         with f2:
-            vis = st.selectbox('Visibilidad', ['Solo visibles','Incluye ocultos','Solo ocultos'], key='rc_vis')
+            vis = st.selectbox('Visibilidad', ['Incluye ocultos','Solo visibles','Solo ocultos'], index=0, key='rc_vis')
         with f3:
-            q = st.text_input('Buscar (archivo/expediente/cliente/abogado)', key='rc_q').strip().lower()
+            q = st.text_input('Buscar', key='rc_buscar').strip().lower()
 
         view = repo.copy()
         if vis == 'Solo visibles':
@@ -2672,39 +2744,50 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
 
         st.dataframe(view[['ID','Archivo','Expediente','Cliente','Abogado','NombreContrato','Estado','Numero','Año','Sigla','Existe','Visible']], use_container_width=True)
 
-        if not view.empty:
-            sel_id = int(st.selectbox('Selecciona ID', view['ID'].tolist(), key='rc_sel'))
+        if view.empty:
+            st.info('No hay resultados con esos filtros.')
+        else:
+            sel_id = int(st.selectbox('Selecciona ID', view['ID'].tolist(), key='rc_sel_id'))
             row = repo[repo['ID']==sel_id].iloc[0]
+
             notas = st.text_area('Notas', value=str(row.get('Notas','')), height=90, key='rc_notas')
             sigla = st.text_input('Sigla', value=str(row.get('Sigla','CLS')), key='rc_sigla')
 
-            b1,b2,b3,b4 = st.columns(4)
+            # Guardar notas en repo
+            idx = repo.index[repo['ID']==sel_id][0]
+            repo.at[idx,'Notas'] = notas
+            _repo_contratos_save(repo)
+
+            b1,b2,b3 = st.columns(3)
             with b1:
-                if st.button('✅ Marcar FIRMADO (asigna N°)', key='rc_firmar'):
+                if st.button('✅ Marcar FIRMADO (asigna N°)', key='rc_firmar_btn'):
                     repo = _repo_contratos_load()
-                    repo.at[repo.index[repo['ID']==sel_id][0],'Notas'] = notas
-                    repo = _repo_contratos_firmar(repo, sel_id, sigla=sigla)
+                    ridx = repo.index[repo['ID']==sel_id][0]
+                    repo.at[ridx,'Notas'] = notas
+                    repo = _repo_firmar(repo, sel_id, sigla)
                     st.success('✅ Firmado y numerado')
                     st.rerun()
             with b2:
-                if st.button('📝 Marcar BORRADOR (sin N°)', key='rc_borr'):
+                if st.button('📝 Marcar BORRADOR', key='rc_borr_btn'):
                     repo = _repo_contratos_load()
-                    repo.at[repo.index[repo['ID']==sel_id][0],'Notas'] = notas
-                    repo = _repo_contratos_borrador(repo, sel_id)
-                    st.success('✅ Borrador')
+                    ridx = repo.index[repo['ID']==sel_id][0]
+                    repo.at[ridx,'Notas'] = notas
+                    repo = _repo_borrador(repo, sel_id)
+                    st.success('✅ Marcado como borrador')
                     st.rerun()
             with b3:
-                if st.button('🗑️ Quitar del repositorio', key='rc_quitar'):
-                    repo = _repo_contratos_load()
-                    repo = _repo_contratos_quitar(repo, sel_id)
-                    st.success('✅ Quitado (no revive)')
-                    st.rerun()
-            with b4:
-                if st.button('♻️ Restaurar', key='rc_rest'):
-                    repo = _repo_contratos_load()
-                    repo = _repo_contratos_restaurar(repo, sel_id)
-                    st.success('✅ Restaurado')
-                    st.rerun()
+                if str(row.get('Visible','1')) == '1':
+                    if st.button('🗑️ Quitar del repositorio', key='rc_quitar_btn'):
+                        repo = _repo_contratos_load()
+                        repo = _repo_quitar(repo, sel_id)
+                        st.success('✅ Quitado (no revive)')
+                        st.rerun()
+                else:
+                    if st.button('♻️ Restaurar', key='rc_rest_btn'):
+                        repo = _repo_contratos_load()
+                        repo = _repo_restaurar(repo, sel_id)
+                        st.success('✅ Restaurado')
+                        st.rerun()
 
             st.divider()
             ruta = str(row.get('Ruta',''))
@@ -2713,50 +2796,6 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                 mime = 'text/plain' if ext=='.txt' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 with open(ruta, 'rb') as f:
                     data = f.read()
-                st.download_button('⬇️ Descargar archivo seleccionado', data=data, file_name=os.path.basename(ruta), mime=mime, key=f'rc_dl_{sel_id}')
+                st.download_button('⬇️ Descargar archivo', data=data, file_name=os.path.basename(ruta), mime=mime, key=f'rc_dl_{sel_id}')
             else:
                 st.warning('Archivo no encontrado en generados/.')
-
-
-# ==========================================================
-# MÓDULO: INSTANCIAS (habilita el menú "Instancias")
-# ==========================================================
-
-if 'menu' in globals() and menu == 'Instancias':
-    st.subheader('📑 Instancias del Caso')
-    df_i = load_df('instancias')
-    if casos.empty:
-        st.info('No hay casos registrados.')
-    else:
-        exp = st.selectbox('Expediente', casos['Expediente'].tolist(), key='inst_exp')
-        sub = df_i[df_i['Caso'].astype(str) == str(exp)].copy()
-        st.markdown('### Registradas')
-        st.dataframe(sub.sort_values('ID', ascending=False), use_container_width=True)
-
-        st.divider()
-        st.markdown('### Registrar instancia')
-        tipo = st.selectbox('Tipo de instancia', ['Actuación Administrativa','Primera Instancia','Segunda Instancia','Casación','Otros'], key='inst_tipo')
-        estado = st.text_input('Estado actual', key='inst_estado')
-        resultado = st.text_input('Resultado', key='inst_resultado')
-        accion = st.text_input('Acción', key='inst_accion')
-        honor = st.number_input('Honorarios (S/)', min_value=0.0, step=100.0, key='inst_honor')
-
-        if st.button('💾 Guardar instancia', disabled=_is_readonly() if '_is_readonly' in globals() else False, key='inst_save'):
-            new_id = next_id(df_i)
-            df_i = add_row(df_i, {
-                'ID': new_id,
-                'Caso': normalize_key(exp),
-                'TipoInstancia': tipo,
-                'EstadoActual': estado,
-                'Resultado': resultado,
-                'Accion': accion,
-                'Honorarios': float(honor),
-                'FechaRegistro': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }, 'instancias')
-            save_df('instancias', df_i)
-            try:
-                _audit_log('ADD','instancias',new_id,f'{exp} {tipo}')
-            except Exception:
-                pass
-            st.success('✅ Instancia guardada')
-            st.rerun()
