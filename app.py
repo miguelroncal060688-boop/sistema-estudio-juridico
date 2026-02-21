@@ -1,4 +1,3 @@
-import streamlit as st
 import pandas as pd
 import os
 import hashlib
@@ -17,10 +16,7 @@ APP_VERSION = "MARCA 004"
 # CONFIGURACIÓN GENERAL
 # ==========================================================
 APP_NAME = "Estudio Jurídico Roncal Liñan y Asociados"
-# ✅ Leer credenciales desde Secrets (Streamlit Cloud)
-CONTROL_PASSWORD = st.secrets.get("CONTROL_PASSWORD", "control123")  # panel de control (fallback local)
-ADMIN_BOOTSTRAP_PASSWORD = st.secrets.get("ADMIN_BOOTSTRAP_PASSWORD", "estudio123")  # admin inicial (fallback)
-PASSWORD_PEPPER = st.secrets.get("PASSWORD_PEPPER", "")  # opcional (mejora hash)
+CONTROL_PASSWORD = "control123"  # clave panel de control
 
 DATA_DIR = "."
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
@@ -94,12 +90,8 @@ TIPOS_CUOTA = ["Honorarios", "CuotaLitis"]
 # ==========================================================
 # UTILIDADES
 # ==========================================================
-# ✅ Esta variable debe existir (la definiremos en el cambio B)
-# PASSWORD_PEPPER = st.secrets.get("PASSWORD_PEPPER", "")
-
 def sha256(text: str) -> str:
-    base = (PASSWORD_PEPPER or "") + str(text)
-    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 def normalize_key(x) -> str:
     if pd.isna(x):
@@ -276,11 +268,11 @@ usuarios = load_df("usuarios")
 if usuarios[usuarios["Usuario"].astype(str) == "admin"].empty:
     usuarios = add_row(usuarios, {
         "Usuario": "admin",
-"PasswordHash": sha256(ADMIN_BOOTSTRAP_PASSWORD),
-"Rol": "admin",
-"AbogadoID": "",
-"Activo": "1",
-"Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "PasswordHash": sha256("estudio123"),
+        "Rol": "admin",
+        "AbogadoID": "",
+        "Activo": "1",
+        "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }, "usuarios")
     save_df("usuarios", usuarios)
 
@@ -298,45 +290,20 @@ def login_ui():
     brand_header()
     st.subheader("Ingreso al Sistema")
 
-    # ✅ Limpiar SOLO la primera vez que se muestra el login en esta sesión
-    if "login_cleared" not in st.session_state:
-        st.session_state["login_cleared"] = True
-        st.session_state["login_user"] = ""
-        st.session_state["login_pass"] = ""
-
-    u = st.text_input(
-        "Acceso",
-        key="login_user",
-        placeholder="Escribe tu usuario",
-        autocomplete="off"
-    )
-    p = st.text_input(
-        "Clave de acceso",
-        key="login_pass",
-        type="password",
-        placeholder="Escribe tu contraseña",
-        autocomplete="off"
-    )
+    u = st.text_input("Usuario", value="admin")
+    p = st.text_input("Contraseña", type="password", value="estudio123")
 
     if st.button("Ingresar"):
         users = load_df("usuarios")
         users = users[users["Activo"].astype(str) == "1"].copy()
         row = users[users["Usuario"].astype(str) == str(u)].copy()
-
         if row.empty or row.iloc[0]["PasswordHash"] != sha256(p):
             st.error("Credenciales incorrectas")
             st.stop()
 
         st.session_state.usuario = u
         st.session_state.rol = row.iloc[0]["Rol"]
-        st.session_state.abogado_id = (
-            str(row.iloc[0]["AbogadoID"])
-            if "AbogadoID" in row.columns else ""
-        )
-
-        # ✅ permitir que se limpie nuevamente cuando vuelvas al login
-        st.session_state.pop("login_cleared", None)
-        st.session_state["login_pass"] = ""
+        st.session_state.abogado_id = str(row.iloc[0]["AbogadoID"]) if "AbogadoID" in row.columns else ""
         st.rerun()
 
 if st.session_state.usuario is None:
@@ -535,11 +502,11 @@ def reset_total(borrar_archivos=False):
     users = pd.DataFrame(columns=SCHEMAS["usuarios"])
     users = pd.concat([users, pd.DataFrame([{
         "Usuario":"admin",
-        "PasswordHash": sha256(ADMIN_BOOTSTRAP_PASSWORD),
+        "PasswordHash": sha256("estudio123"),
         "Rol":"admin",
         "AbogadoID":"",
         "Activo":"1",
-        "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }])], ignore_index=True)
     users.to_csv(FILES["usuarios"], index=False)
 
@@ -576,7 +543,7 @@ with st.sidebar.expander("🔒 Panel de control", expanded=False):
         wipe = st.checkbox("Borrar también uploads/ y generados/ (solo reset total)", value=False)
         if st.button("🧨 Reset total (borra todo)"):
             reset_total(borrar_archivos=wipe)
-            st.success("✅ Reset total aplicado. Usuario: admin. Contraseña: la configurada en Secrets.")
+            st.success("✅ Reset total aplicado. admin/estudio123")
             st.rerun()
     else:
         st.info("Panel protegido. (Pide la clave)")
@@ -1497,23 +1464,9 @@ if menu == "Usuarios":
             st.warning("Primero registra abogados para vincular usuarios.")
         else:
             with st.form("new_user_form"):
-                u = st.text_input(
-    "Acceso",
-    value="",
-    key="login_user",
-    placeholder="Escribe tu usuario",
-    autocomplete="off"
-)
-p = st.text_input(
-    "Clave de acceso",
-    value="",
-    key="login_pass",
-    type="password",
-    placeholder="Escribe tu contraseña",
-    autocomplete="off"
-)
-
-    rol = st.selectbox("Rol", ["admin","abogado","asistente"])
+                u = st.text_input("Usuario")
+                p = st.text_input("Contraseña", type="password")
+                rol = st.selectbox("Rol", ["admin","abogado","asistente"])
                 abogado_id = st.selectbox(
                     "Abogado asociado",
                     options=list(abogado_map.keys()),
