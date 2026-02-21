@@ -1679,7 +1679,8 @@ if menu == "Cronograma de Cuotas":
         st.download_button("⬇️ Descargar cronograma (CSV)", cuotas.to_csv(index=False).encode("utf-8"), "cuotas.csv", key="cr_dl_csv")
 
 # ==========================================================
-# ACTUACIONES (FICHA por caso/cliente + historial desplegable + reporte)
+# ACTUACIONES (FICHA por caso/cliente + historial + reporte)
+# + ✅ Aranceles / Otros gastos (sumables por caso)
 # ==========================================================
 if menu == "Actuaciones":
     st.subheader("🧾 Actuaciones – Ficha por caso y cliente")
@@ -1687,16 +1688,22 @@ if menu == "Actuaciones":
     if casos.empty:
         st.info("Primero registra casos.")
     else:
-        tab_reg, tab_hist, tab_rep = st.tabs(["Registrar actuación", "Historial (desplegable)", "Reporte"])
+        tab_reg, tab_hist, tab_rep = st.tabs(
+            ["Registrar actuación", "Historial (desplegable)", "Reporte"]
+        )
 
         exp_list = casos["Expediente"].tolist()
 
+        # ==================================================
+        # REGISTRAR
+        # ==================================================
         with tab_reg:
             exp = st.selectbox("Expediente", exp_list, key="act_exp")
             fila_caso = casos[casos["Expediente"] == exp].iloc[0]
             cliente = str(fila_caso.get("Cliente",""))
 
             st.write(f"**Cliente:** {cliente}")
+
             with st.form("act_new_form"):
                 fecha = st.date_input("Fecha", value=date.today())
                 tipo = st.text_input("Tipo de actuación (ej: Demanda, Audiencia, Sentencia, Apelación...)")
@@ -1704,6 +1711,20 @@ if menu == "Actuaciones":
                 prox = st.text_input("Próxima acción (opcional)")
                 prox_fecha = st.text_input("Fecha próxima acción (YYYY-MM-DD opcional)")
                 link = st.text_input("Link OneDrive (opcional)")
+
+                # ✅ NUEVOS CAMPOS ECONÓMICOS
+                col1, col2 = st.columns(2)
+                with col1:
+                    aranceles = st.number_input(
+                        "Aranceles / Costas (S/)",
+                        min_value=0.0, step=50.0, value=0.0
+                    )
+                with col2:
+                    otros_gastos = st.number_input(
+                        "Otros gastos (S/)",
+                        min_value=0.0, step=50.0, value=0.0
+                    )
+
                 notas = st.text_area("Notas (opcional)", height=100)
                 submit = st.form_submit_button("Guardar actuación")
 
@@ -1719,21 +1740,39 @@ if menu == "Actuaciones":
                         "ProximaAccion": prox,
                         "FechaProximaAccion": prox_fecha,
                         "LinkOneDrive": link,
+                        "CostasAranceles": float(aranceles),
+                        "Gastos": float(otros_gastos),
                         "Notas": notas
                     }, "actuaciones")
                     save_df("actuaciones", actuaciones)
                     st.success("✅ Actuación registrada")
                     st.rerun()
 
+        # ==================================================
+        # HISTORIAL
+        # ==================================================
         with tab_hist:
-            exp_h = st.selectbox("Selecciona expediente para historial", exp_list, key="act_hist_exp")
-            hist = actuaciones[actuaciones["Caso"] == normalize_key(exp_h)].copy()
+            exp_h = st.selectbox(
+                "Selecciona expediente para historial",
+                exp_list,
+                key="act_hist_exp"
+            )
+            hist = actuaciones[
+                actuaciones["Caso"] == normalize_key(exp_h)
+            ].copy()
+
             if hist.empty:
                 st.info("No hay actuaciones registradas para este caso.")
             else:
-                # orden por fecha (string) y luego ID
-                hist["_Fecha_dt"] = hist["Fecha"].apply(lambda x: pd.to_datetime(x, errors="coerce"))
-                hist.sort_values(["_Fecha_dt","ID"], ascending=[False, False], inplace=True)
+                hist["_Fecha_dt"] = hist["Fecha"].apply(
+                    lambda x: pd.to_datetime(x, errors="coerce")
+                )
+                hist.sort_values(
+                    ["_Fecha_dt","ID"],
+                    ascending=[False, False],
+                    inplace=True
+                )
+
                 for _, r in hist.iterrows():
                     titulo = f"{r['Fecha']} – {r['TipoActuacion']} (ID {r['ID']})"
                     with st.expander(titulo, expanded=False):
@@ -1743,25 +1782,72 @@ if menu == "Actuaciones":
                         st.write(f"**Fecha próxima acción:** {r.get('FechaProximaAccion','')}")
                         if str(r.get("LinkOneDrive","")).strip():
                             st.markdown(f"**Link OneDrive:** {r.get('LinkOneDrive')}")
+
+                        st.write(
+                            f"**Aranceles / Costas:** S/ {money(r.get('CostasAranceles',0)):,.2f}"
+                        )
+                        st.write(
+                            f"**Otros gastos:** S/ {money(r.get('Gastos',0)):,.2f}"
+                        )
                         st.write(f"**Notas:** {r.get('Notas','')}")
 
                 st.divider()
                 st.markdown("### Editar / borrar actuación (por ID)")
-                sel = st.selectbox("Actuación ID", hist["ID"].tolist(), key="act_edit_id")
+                sel = st.selectbox(
+                    "Actuación ID",
+                    hist["ID"].tolist(),
+                    key="act_edit_id"
+                )
                 fila = actuaciones[actuaciones["ID"] == sel].iloc[0]
+
                 with st.form("act_edit_form"):
                     fecha_e = st.text_input("Fecha (YYYY-MM-DD)", value=str(fila["Fecha"]))
                     tipo_e = st.text_input("TipoActuacion", value=str(fila["TipoActuacion"]))
                     resumen_e = st.text_area("Resumen", value=str(fila["Resumen"]), height=160)
                     prox_e = st.text_input("ProximaAccion", value=str(fila["ProximaAccion"]))
-                    prox_fecha_e = st.text_input("FechaProximaAccion", value=str(fila["FechaProximaAccion"]))
-                    link_e = st.text_input("LinkOneDrive", value=str(fila.get("LinkOneDrive","")))
-                    notas_e = st.text_area("Notas", value=str(fila["Notas"]), height=100)
+                    prox_fecha_e = st.text_input(
+                        "FechaProximaAccion",
+                        value=str(fila["FechaProximaAccion"])
+                    )
+                    link_e = st.text_input(
+                        "LinkOneDrive",
+                        value=str(fila.get("LinkOneDrive",""))
+                    )
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        aranceles_e = st.number_input(
+                            "Aranceles / Costas (S/)",
+                            min_value=0.0,
+                            value=money(fila.get("CostasAranceles",0)),
+                            step=50.0
+                        )
+                    with col2:
+                        gastos_e = st.number_input(
+                            "Otros gastos (S/)",
+                            min_value=0.0,
+                            value=money(fila.get("Gastos",0)),
+                            step=50.0
+                        )
+
+                    notas_e = st.text_area(
+                        "Notas",
+                        value=str(fila["Notas"]),
+                        height=100
+                    )
                     submit = st.form_submit_button("Guardar cambios")
+
                     if submit:
                         idx = actuaciones.index[actuaciones["ID"] == sel][0]
-                        actuaciones.loc[idx, ["Fecha","TipoActuacion","Resumen","ProximaAccion","FechaProximaAccion","LinkOneDrive","Notas"]] = [
-                            fecha_e, tipo_e, resumen_e, prox_e, prox_fecha_e, link_e, notas_e
+                        actuaciones.loc[idx, [
+                            "Fecha","TipoActuacion","Resumen",
+                            "ProximaAccion","FechaProximaAccion",
+                            "LinkOneDrive","CostasAranceles","Gastos","Notas"
+                        ]] = [
+                            fecha_e, tipo_e, resumen_e,
+                            prox_e, prox_fecha_e,
+                            link_e, float(aranceles_e),
+                            float(gastos_e), notas_e
                         ]
                         save_df("actuaciones", actuaciones)
                         st.success("✅ Actualizado")
@@ -1773,21 +1859,51 @@ if menu == "Actuaciones":
                     st.success("✅ Eliminado")
                     st.rerun()
 
+        # ==================================================
+        # REPORTE (SUMAS)
+        # ==================================================
         with tab_rep:
             st.markdown("### Reporte de historial de actuaciones")
-            exp_r = st.selectbox("Expediente para reporte", exp_list, key="act_rep_exp")
-            rep = actuaciones[actuaciones["Caso"] == normalize_key(exp_r)].copy()
+
+            exp_r = st.selectbox(
+                "Expediente para reporte",
+                exp_list,
+                key="act_rep_exp"
+            )
+            rep = actuaciones[
+                actuaciones["Caso"] == normalize_key(exp_r)
+            ].copy()
+
             rep = rep.sort_values("Fecha", ascending=False) if not rep.empty else rep
 
+            # ✅ SUMAS POR CASO
+            total_aranceles = money(rep.get("CostasAranceles", pd.Series()).sum())
+            total_gastos = money(rep.get("Gastos", pd.Series()).sum())
+            total_costos = total_aranceles + total_gastos
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Aranceles / Costas", f"S/ {total_aranceles:,.2f}")
+            c2.metric("Otros gastos", f"S/ {total_gastos:,.2f}")
+            c3.metric("Total gastos", f"S/ {total_costos:,.2f}")
+
             st.dataframe(rep, use_container_width=True)
+
             st.download_button(
                 "⬇️ Descargar historial (CSV)",
                 rep.to_csv(index=False).encode("utf-8"),
                 f"historial_actuaciones_{exp_r.replace('/','_')}.csv"
             )
 
-            # Reporte TXT
-            lines = [f"HISTORIAL DE ACTUACIONES – EXPEDIENTE: {exp_r}", "-"*60]
+            # TXT
+            lines = [
+                f"HISTORIAL DE ACTUACIONES – EXPEDIENTE: {exp_r}",
+                "-"*60,
+                f"TOTAL ARANCELES / COSTAS: S/ {total_aranceles:,.2f}",
+                f"TOTAL OTROS GASTOS: S/ {total_gastos:,.2f}",
+                f"TOTAL GENERAL: S/ {total_costos:,.2f}",
+                "-"*60,
+            ]
+
             if rep.empty:
                 lines.append("No hay actuaciones registradas.")
             else:
@@ -1795,15 +1911,16 @@ if menu == "Actuaciones":
                     lines.append(f"Fecha: {r.get('Fecha','')}")
                     lines.append(f"Tipo: {r.get('TipoActuacion','')}")
                     lines.append(f"Resumen: {r.get('Resumen','')}")
-                    lines.append(f"Próxima acción: {r.get('ProximaAccion','')}")
-                    lines.append(f"Fecha próxima acción: {r.get('FechaProximaAccion','')}")
-                    if str(r.get("LinkOneDrive","")).strip():
-                        lines.append(f"Link OneDrive: {r.get('LinkOneDrive','')}")
-                    lines.append(f"Notas: {r.get('Notas','')}")
+                    lines.append(f"Aranceles: S/ {money(r.get('CostasAranceles',0)):,.2f}")
+                    lines.append(f"Otros gastos: S/ {money(r.get('Gastos',0)):,.2f}")
                     lines.append("-"*60)
 
             txt = "\n".join(lines)
-            st.download_button("⬇️ Descargar historial (TXT)", txt.encode("utf-8"), f"historial_actuaciones_{exp_r.replace('/','_')}.txt")
+            st.download_button(
+                "⬇️ Descargar historial (TXT)",
+                txt.encode("utf-8"),
+                f"historial_actuaciones_{exp_r.replace('/','_')}.txt"
+            )
 
 # ==========================================================
 # CONSULTAS: autoguardado + abogado + costo + proforma + historial + reporte ingresos
