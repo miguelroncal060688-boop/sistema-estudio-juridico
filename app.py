@@ -2760,24 +2760,23 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                 view['ID'].astype(str).tolist(),
                 key='rc_sel_id'
             )
-
+        
             # ✅ Buscar la fila comparando como string (evita mismatch por tipos)
             row = repo[repo['ID'].astype(str) == str(sel_id)].iloc[0]
-
+        
             notas = st.text_area('Notas', value=str(row.get('Notas','')), height=90, key='rc_notas')
             sigla = st.text_input('Sigla', value=str(row.get('Sigla','CLS')), key='rc_sigla')
-
-
-            # Guardar notas en repo
-            idx = repo.index[repo['ID']==sel_id][0]
+        
+            # Guardar notas en repo ✅ (corregido)
+            idx = repo.index[repo['ID'].astype(str) == str(sel_id)][0]
             repo.at[idx,'Notas'] = notas
             _repo_contratos_save(repo)
-
+        
             b1,b2,b3 = st.columns(3)
             with b1:
                 if st.button('✅ Marcar FIRMADO (asigna N°)', key='rc_firmar_btn'):
                     repo = _repo_contratos_load()
-                    ridx = repo.index[repo['ID']==sel_id][0]
+                    ridx = repo.index[repo['ID'].astype(str) == str(sel_id)][0]  # ✅ corregido
                     repo.at[ridx,'Notas'] = notas
                     repo = _repo_firmar(repo, sel_id, sigla)
                     st.success('✅ Firmado y numerado')
@@ -2785,7 +2784,7 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
             with b2:
                 if st.button('📝 Marcar BORRADOR', key='rc_borr_btn'):
                     repo = _repo_contratos_load()
-                    ridx = repo.index[repo['ID']==sel_id][0]
+                    ridx = repo.index[repo['ID'].astype(str) == str(sel_id)][0]  # ✅ corregido
                     repo.at[ridx,'Notas'] = notas
                     repo = _repo_borrador(repo, sel_id)
                     st.success('✅ Marcado como borrador')
@@ -2803,6 +2802,7 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                         repo = _repo_restaurar(repo, sel_id)
                         st.success('✅ Restaurado')
                         st.rerun()
+
 
             st.divider()
             ruta = str(row.get('Ruta',''))
