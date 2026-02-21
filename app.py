@@ -492,7 +492,7 @@ def cuotas_status_all():
 # ==========================================================
 # 4) DASHBOARD con semáforo de actuaciones pendientes
 # ==========================================================
-if menu == "Dashboard":
+if "menu" in globals() and menu == "Dashboard"":
     st.subheader("📊 Dashboard General")
 
     df_res = resumen_financiero_df()
