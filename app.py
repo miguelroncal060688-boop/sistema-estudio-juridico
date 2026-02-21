@@ -1615,12 +1615,6 @@ if menu == "Generar Contrato":
                 key=f"download_word_{exp}_{tpl_id}"
             )
 
-        st.download_button(
-            "⬇️ Descargar contrato (WORD)",
-            data=docx_file,
-            file_name=nombre_archivo.replace(".txt", ".docx"),
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )    
         if st.button("💾 Guardar en carpeta generados/", key="gc_save"):
             out_path = os.path.join(GENERADOS_DIR, nombre_archivo)
             with open(out_path, "w", encoding="utf-8") as f:
