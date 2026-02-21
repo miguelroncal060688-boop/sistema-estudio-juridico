@@ -17,7 +17,7 @@ APP_VERSION = "MARCA 004"
 # CONFIGURACIÓN GENERAL
 # ==========================================================
 APP_NAME = "Estudio Jurídico Roncal Liñan y Asociados"
-CONTROL_PASSWORD = "control123"  # clave panel de control
+CONTROL_PASSWORD = st.secrets.get("CONTROL_PASSWORD", "control123")  # clave panel de control
 
 DATA_DIR = "."
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
