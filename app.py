@@ -1963,8 +1963,8 @@ if menu == "Actuaciones":
                     st.success("✅ Eliminado")
                     st.rerun()
 
-# ==================================================
-        # REPORTE (PENDIENTE vs PAGADO por cliente)
+        # ==================================================
+        # REPORTE (GASTOS DEL CLIENTE – SIN SALDOS AMBIGUOS)
         # ==================================================
         with tab_rep:
             st.markdown("### Reporte de historial de actuaciones")
@@ -1974,40 +1974,52 @@ if menu == "Actuaciones":
                 exp_list,
                 key="act_rep_exp"
             )
+
             rep = actuaciones[
                 actuaciones["Caso"] == normalize_key(exp_r)
             ].copy()
 
-            rep = rep.sort_values("Fecha", ascending=False) if not rep.empty else rep
-
             if rep.empty:
                 st.info("No hay actuaciones registradas para este expediente.")
             else:
-                # Normalizar numéricos
+                # Normalizar valores
                 rep["CostasAranceles"] = pd.to_numeric(rep.get("CostasAranceles", 0), errors="coerce").fillna(0.0)
                 rep["Gastos"] = pd.to_numeric(rep.get("Gastos", 0), errors="coerce").fillna(0.0)
-                rep["GastosTotal"] = rep["CostasAranceles"] + rep["Gastos"]
-
-                # Estado pagado (si no existe, queda como pendiente)
                 rep["GastosPagado"] = rep.get("GastosPagado", "0").astype(str)
 
-                # ✅ separar pagados vs pendientes
-                pendiente = rep.loc[rep["GastosPagado"] != "1", "GastosTotal"].sum()
-                pagado = rep.loc[rep["GastosPagado"] == "1", "GastosTotal"].sum()
+                # ✅ columnas explícitas (NO ambiguas)
+                rep["Gasto Pendiente Cliente"] = rep.apply(
+                    lambda r: (r["CostasAranceles"] + r["Gastos"]) if r["GastosPagado"] != "1" else 0.0,
+                    axis=1
+                )
+                rep["Gasto Pagado Cliente"] = rep.apply(
+                    lambda r: (r["CostasAranceles"] + r["Gastos"]) if r["GastosPagado"] == "1" else 0.0,
+                    axis=1
+                )
+
+                total_pendiente = rep["Gasto Pendiente Cliente"].sum()
+                total_pagado = rep["Gasto Pagado Cliente"].sum()
 
                 c1, c2 = st.columns(2)
-                c1.metric("⏳ Gastos pendientes del cliente (deuda)", f"S/ {pendiente:,.2f}")
-                c2.metric("✅ Gastos pagados por el cliente", f"S/ {pagado:,.2f}")
+                c1.metric("⏳ Pendiente de pago por el cliente", f"S/ {total_pendiente:,.2f}")
+                c2.metric("✅ Pagado por el cliente", f"S/ {total_pagado:,.2f}")
 
-                # Mostrar estado por fila (opcional pero útil)
-                rep["EstadoGastos"] = rep["GastosPagado"].apply(lambda x: "Pagado" if x == "1" else "Pendiente")
-
-                st.dataframe(rep, use_container_width=True)
+                # ✅ dataframe SIN columnas que parezcan saldo
+                st.dataframe(
+                    rep[[
+                        "Fecha",
+                        "TipoActuacion",
+                        "Gasto Pendiente Cliente",
+                        "Gasto Pagado Cliente",
+                        "Notas"
+                    ]].sort_values("Fecha", ascending=False),
+                    use_container_width=True
+                )
 
                 st.download_button(
-                    "⬇️ Descargar historial (CSV)",
+                    "⬇️ Descargar reporte de actuaciones (CSV)",
                     rep.to_csv(index=False).encode("utf-8"),
-                    f"historial_actuaciones_{exp_r.replace('/','_')}.csv"
+                    f"reporte_actuaciones_{exp_r.replace('/','_')}.csv"
                 )
 
 # ==========================================================
