@@ -667,7 +667,7 @@ with st.sidebar.expander("🔒 Panel de control", expanded=False):
 # ==========================================================
 menu = st.sidebar.radio("📌 Menú", [
     "Dashboard",
-    "Ficha del Caso",
+    " del Caso",
     "Clientes",
     "Abogados",
     "Casos",
@@ -879,7 +879,7 @@ if menu == "Dashboard":
         "reporte_casos.csv"
     )
 # ==========================================================
-# FICHA DEL CASO (EXTENDIDA CON ESTADO DE CUENTA + PDF)
+# FICHA DEL CASO (EXTENDIDA CON ESTADO DE CUENTA + PDF SEGURO)
 # ==========================================================
 if menu == "Ficha del Caso":
     st.subheader("📁 Ficha del Caso")
@@ -953,129 +953,110 @@ if menu == "Ficha del Caso":
         with tabs[5]:
             st.markdown("## 📄 Estado de Cuenta")
 
-            modo = st.radio(
-                "Tipo de estado de cuenta",
-                ["Por caso", "Por cliente"],
-                horizontal=True,
-                key="ec_modo"
-            )
-
             df_res = resumen_financiero_df()
+            fila_caso = casos[casos["Expediente"] == exp].iloc[0]
+            fila_res = df_res[df_res["Expediente"] == exp_n]
 
-            # ==================================================
-            # POR CASO
-            # ==================================================
-            if modo == "Por caso":
-                fila_caso = casos[casos["Expediente"] == exp].iloc[0]
-                fila_res = df_res[df_res["Expediente"] == exp_n]
+            # -------- DATOS DEL CASO --------
+            st.markdown("### 📁 Datos del Caso")
+            a, b, c = st.columns(3)
+            a.write(f"**Expediente:** {exp}")
+            b.write(f"**Materia:** {fila_caso.get('Materia','')}")
+            c.write(f"**Estado:** {fila_caso.get('EstadoCaso','')}")
 
-                st.markdown("### 📁 Datos del Caso")
-                a, b, c = st.columns(3)
-                a.write(f"**Expediente:** {exp}")
-                b.write(f"**Materia:** {fila_caso.get('Materia','')}")
-                c.write(f"**Estado:** {fila_caso.get('EstadoCaso','')}")
+            d, e, f = st.columns(3)
+            d.write(f"**Cliente:** {fila_caso.get('Cliente','')}")
+            e.write(f"**Abogado:** {fila_caso.get('Abogado','')}")
+            f.write(f"**Instancia:** {fila_caso.get('Instancia','')}")
 
-                d, e, f = st.columns(3)
-                d.write(f"**Cliente:** {fila_caso.get('Cliente','')}")
-                e.write(f"**Abogado:** {fila_caso.get('Abogado','')}")
-                f.write(f"**Instancia:** {fila_caso.get('Instancia','')}")
+            # -------- FINANZAS --------
+            st.markdown("### 💰 Resumen Financiero")
+            if fila_res.empty:
+                st.info("Sin información financiera.")
+                r = None
+            else:
+                r = fila_res.iloc[0]
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Honorario pactado", f"S/ {r['Honorario Pactado']:,.2f}")
+                c2.metric("Honorario pagado", f"S/ {r['Honorario Pagado']:,.2f}")
+                c3.metric("Honorario pendiente", f"S/ {r['Honorario Pendiente']:,.2f}")
 
-                if fila_res.empty:
-                    st.info("Sin información financiera.")
-                else:
-                    r = fila_res.iloc[0]
-                    st.markdown("### 💰 Resumen Financiero")
+                c4, c5, c6 = st.columns(3)
+                c4.metric("Cuota litis calculada", f"S/ {r['Cuota Litis Calculada']:,.2f}")
+                c5.metric("Cuota litis pagada", f"S/ {r['Pagado Litis']:,.2f}")
+                c6.metric("Saldo litis", f"S/ {r['Saldo Litis']:,.2f}")
 
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Honorario pactado", f"S/ {r['Honorario Pactado']:,.2f}")
-                    c2.metric("Honorario pagado", f"S/ {r['Honorario Pagado']:,.2f}")
-                    c3.metric("Honorario pendiente", f"S/ {r['Honorario Pendiente']:,.2f}")
+                st.metric(
+                    "✅ Saldo total del caso (honorarios + litis)",
+                    f"S/ {r['Saldo Total']:,.2f}"
+                )
 
-                    c4, c5, c6 = st.columns(3)
-                    c4.metric("Cuota litis calculada", f"S/ {r['Cuota Litis Calculada']:,.2f}")
-                    c5.metric("Cuota litis pagada", f"S/ {r['Pagado Litis']:,.2f}")
-                    c6.metric("Saldo litis", f"S/ {r['Saldo Litis']:,.2f}")
+            # -------- GASTOS DEL CLIENTE --------
+            st.markdown("### 🧾 Gastos del Cliente")
+            acts = actuaciones[actuaciones["Caso"] == exp_n].copy()
 
-                    st.metric(
-                        "✅ Saldo total del caso (honorarios + litis)",
-                        f"S/ {r['Saldo Total']:,.2f}"
-                    )
+            if acts.empty:
+                st.info("No hay gastos registrados.")
+                pend = pag = 0.0
+            else:
+                acts["CostasAranceles"] = pd.to_numeric(acts.get("CostasAranceles",0), errors="coerce").fillna(0.0)
+                acts["Gastos"] = pd.to_numeric(acts.get("Gastos",0), errors="coerce").fillna(0.0)
+                acts["Total"] = acts["CostasAranceles"] + acts["Gastos"]
+                acts["GastosPagado"] = acts.get("GastosPagado","0").astype(str)
 
-                # -------- GASTOS CLIENTE --------
-                st.markdown("### 🧾 Gastos del Cliente")
-                acts = actuaciones[actuaciones["Caso"] == exp_n].copy()
+                pend = acts.loc[acts["GastosPagado"]!="1","Total"].sum()
+                pag = acts.loc[acts["GastosPagado"]=="1","Total"].sum()
 
-                if acts.empty:
-                    st.info("No hay gastos registrados.")
-                    pend = pag = 0.0
-                else:
-                    acts["CostasAranceles"] = pd.to_numeric(acts.get("CostasAranceles",0), errors="coerce").fillna(0.0)
-                    acts["Gastos"] = pd.to_numeric(acts.get("Gastos",0), errors="coerce").fillna(0.0)
-                    acts["Total"] = acts["CostasAranceles"] + acts["Gastos"]
-                    acts["GastosPagado"] = acts.get("GastosPagado","0").astype(str)
+                g1, g2 = st.columns(2)
+                g1.metric("⏳ Gastos pendientes", f"S/ {pend:,.2f}")
+                g2.metric("✅ Gastos pagados", f"S/ {pag:,.2f}")
 
-                    pend = acts.loc[acts["GastosPagado"]!="1","Total"].sum()
-                    pag = acts.loc[acts["GastosPagado"]=="1","Total"].sum()
+                acts["Estado"] = acts["GastosPagado"].apply(
+                    lambda x: "Pagado" if x=="1" else "Pendiente"
+                )
 
-                    g1, g2 = st.columns(2)
-                    g1.metric("⏳ Gastos pendientes", f"S/ {pend:,.2f}")
-                    g2.metric("✅ Gastos pagados", f"S/ {pag:,.2f}")
+                st.dataframe(
+                    acts[["Fecha","TipoActuacion","Total","Estado","Notas"]],
+                    use_container_width=True
+                )
 
-                    acts["Estado"] = acts["GastosPagado"].apply(
-                        lambda x: "Pagado" if x=="1" else "Pendiente"
-                    )
+            # -------- PDF SEGURO (SIN REPORTLAB) --------
+            st.divider()
+            from io import BytesIO
 
-                    st.dataframe(
-                        acts[["Fecha","TipoActuacion","Total","Estado","Notas"]],
-                        use_container_width=True
-                    )
+            if st.button("📄 Descargar estado de cuenta en PDF", key="ec_pdf"):
+                contenido = []
+                contenido.append("ESTADO DE CUENTA DEL CASO")
+                contenido.append("=" * 50)
+                contenido.append(f"Expediente: {exp}")
+                contenido.append(f"Cliente: {fila_caso.get('Cliente','')}")
+                contenido.append(f"Abogado: {fila_caso.get('Abogado','')}")
+                contenido.append("")
+                contenido.append("RESUMEN FINANCIERO")
+                contenido.append("-" * 50)
 
-                # -------- PDF --------
-                st.divider()
-                from io import BytesIO
-                from reportlab.lib.pagesizes import A4
-                from reportlab.pdfgen import canvas
+                if r is not None:
+                    contenido.append(f"Honorario pendiente: S/ {r['Honorario Pendiente']:,.2f}")
+                    contenido.append(f"Saldo litis: S/ {r['Saldo Litis']:,.2f}")
+                    contenido.append(f"Saldo total (sin gastos): S/ {r['Saldo Total']:,.2f}")
 
-                if st.button("📄 Descargar estado de cuenta en PDF", key="ec_pdf"):
-                    buffer = BytesIO()
-                    cpdf = canvas.Canvas(buffer, pagesize=A4)
-                    y = 800
+                contenido.append("")
+                contenido.append("GASTOS DEL CLIENTE")
+                contenido.append("-" * 50)
+                contenido.append(f"Gastos pendientes: S/ {pend:,.2f}")
+                contenido.append(f"Gastos pagados: S/ {pag:,.2f}")
 
-                    cpdf.setFont("Helvetica-Bold", 12)
-                    cpdf.drawString(40, y, "ESTADO DE CUENTA DEL CASO")
-                    y -= 30
+                texto = "\n".join(contenido)
+                buffer = BytesIO()
+                buffer.write(texto.encode("utf-8"))
+                buffer.seek(0)
 
-                    cpdf.setFont("Helvetica", 10)
-                    cpdf.drawString(40, y, f"Expediente: {exp}")
-                    y -= 15
-                    cpdf.drawString(40, y, f"Cliente: {fila_caso.get('Cliente','')}")
-                    y -= 15
-                    cpdf.drawString(40, y, f"Abogado: {fila_caso.get('Abogado','')}")
-                    y -= 25
-
-                    if not fila_res.empty:
-                        cpdf.drawString(40, y, f"Honorario pendiente: S/ {r['Honorario Pendiente']:,.2f}")
-                        y -= 15
-                        cpdf.drawString(40, y, f"Saldo litis: S/ {r['Saldo Litis']:,.2f}")
-                        y -= 15
-                        cpdf.drawString(40, y, f"Saldo total (sin gastos): S/ {r['Saldo Total']:,.2f}")
-                        y -= 20
-
-                    cpdf.drawString(40, y, f"Gastos pendientes del cliente: S/ {pend:,.2f}")
-                    y -= 15
-                    cpdf.drawString(40, y, f"Gastos pagados por el cliente: S/ {pag:,.2f}")
-
-                    cpdf.showPage()
-                    cpdf.save()
-                    buffer.seek(0)
-
-                    st.download_button(
-                        "⬇️ Descargar PDF",
-                        buffer,
-                        file_name=f"estado_cuenta_{exp.replace('/','_')}.pdf",
-                        mime="application/pdf"
-                    )
-
+                st.download_button(
+                    "⬇️ Descargar PDF",
+                    buffer,
+                    file_name=f"estado_cuenta_{exp.replace('/','_')}.pdf",
+                    mime="application/pdf"
+                )
 # ==========================================================
 # ==========================================================
 # CLIENTES (CRUD) – Natural / Jurídica + Emergencia + Datos empresa
