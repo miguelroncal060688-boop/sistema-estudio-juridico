@@ -615,12 +615,44 @@ menu = st.sidebar.radio("📌 Menú", [
 brand_header()
 
 # ==========================================================
-# DASHBOARD COMPLETO
+# DASHBOARD COMPLETO (CORREGIDO Y ROBUSTO)
 # ==========================================================
 if menu == "Dashboard":
+
+    # =========================
+    # Data base
+    # =========================
     df_res = resumen_financiero_df()
     df_estado = cuotas_status_all()
 
+    # =========================
+    # Normalización defensiva
+    # =========================
+    if not df_res.empty:
+        for col in [
+            "Honorario Pactado",
+            "Honorario Pagado",
+            "Honorario Pendiente",
+            "Cuota Litis Calculada",
+            "Pagado Litis",
+            "Saldo Litis",
+        ]:
+            if col not in df_res.columns:
+                df_res[col] = 0
+            df_res[col] = pd.to_numeric(df_res[col], errors="coerce").fillna(0)
+
+        # ✅ Recalcular pendientes SIEMPRE (evita negativos)
+        df_res["Honorario Pendiente"] = (
+            df_res["Honorario Pactado"] - df_res["Honorario Pagado"]
+        ).clip(lower=0)
+
+        df_res["Saldo Litis"] = (
+            df_res["Cuota Litis Calculada"] - df_res["Pagado Litis"]
+        ).clip(lower=0)
+
+    # =========================
+    # Totales seguros
+    # =========================
     total_pactado = df_res["Honorario Pactado"].sum() if not df_res.empty else 0
     total_pagado_h = df_res["Honorario Pagado"].sum() if not df_res.empty else 0
     total_pend_h = df_res["Honorario Pendiente"].sum() if not df_res.empty else 0
@@ -629,6 +661,9 @@ if menu == "Dashboard":
     total_pagado_l = df_res["Pagado Litis"].sum() if not df_res.empty else 0
     total_pend_l = df_res["Saldo Litis"].sum() if not df_res.empty else 0
 
+    # =========================
+    # UI
+    # =========================
     st.subheader("📊 Dashboard General")
 
     r1c1, r1c2, r1c3 = st.columns(3)
@@ -647,24 +682,56 @@ if menu == "Dashboard":
     c5.metric("Cuota litis pagada (S/)", f"{total_pagado_l:,.2f}")
     c6.metric("Cuota litis pendiente (S/)", f"{total_pend_l:,.2f}")
 
+    # =========================
+    # Detalle por caso
+    # =========================
     st.divider()
     st.markdown("### 📌 Detalle por caso")
-    st.dataframe(df_res, use_container_width=True)
 
+    if df_res.empty:
+        st.info("Aún no hay información financiera.")
+    else:
+        st.dataframe(df_res, use_container_width=True)
+
+    # =========================
+    # Cuotas vencidas / por vencer
+    # =========================
     st.divider()
     st.markdown("### 📅 Cuotas vencidas / por vencer")
+
     if df_estado.empty or "SaldoCuota" not in df_estado.columns:
         st.info("Aún no hay cronograma calculable.")
     else:
-        df_pend = df_estado[safe_float_series(df_estado["SaldoCuota"]) > 0].copy()
-        vencidas = df_pend[df_pend["DiasParaVencimiento"].notna() & (df_pend["DiasParaVencimiento"] < 0)]
-        por_vencer = df_pend[df_pend["DiasParaVencimiento"].notna() & (df_pend["DiasParaVencimiento"].between(0, 7))]
+        df_estado = df_estado.copy()
+        df_estado["SaldoCuota"] = pd.to_numeric(
+            df_estado["SaldoCuota"], errors="coerce"
+        ).fillna(0)
+
+        df_pend = df_estado[df_estado["SaldoCuota"] > 0]
+
+        vencidas = df_pend[
+            df_pend["DiasParaVencimiento"].notna()
+            & (df_pend["DiasParaVencimiento"] < 0)
+        ]
+        por_vencer = df_pend[
+            df_pend["DiasParaVencimiento"].notna()
+            & df_pend["DiasParaVencimiento"].between(0, 7)
+        ]
+
         st.markdown("**Vencidas**")
         st.dataframe(vencidas, use_container_width=True)
+
         st.markdown("**Por vencer (7 días)**")
         st.dataframe(por_vencer, use_container_width=True)
 
-    st.download_button("⬇️ Descargar reporte casos (CSV)", df_res.to_csv(index=False).encode("utf-8"), "reporte_casos.csv")
+    # =========================
+    # Export
+    # =========================
+    st.download_button(
+        "⬇️ Descargar reporte casos (CSV)",
+        df_res.to_csv(index=False).encode("utf-8"),
+        "reporte_casos.csv",
+    )
 
 # ==========================================================
 # FICHA DEL CASO (sin cambios)
