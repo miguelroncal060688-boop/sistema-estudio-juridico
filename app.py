@@ -1684,11 +1684,14 @@ def build_context(expediente: str):
 
     return ctx
 
+
 def render_template(text: str, ctx: dict) -> str:
     out = text
     for k, v in ctx.items():
         out = out.replace(k, v)
     return out
+
+
 # ==========================================================
 # WORD (.DOCX) – soporte seguro
 # ==========================================================
@@ -1698,6 +1701,7 @@ try:
     from docx import Document
 except Exception:
     Document = None
+
 
 def generar_docx(texto: str, titulo="Contrato"):
     """
@@ -1717,6 +1721,11 @@ def generar_docx(texto: str, titulo="Contrato"):
     doc.save(buffer)
     buffer.seek(0)
     return buffer
+
+
+# ==========================================================
+# UI: Generar Contrato + Editar manualmente + Guardar TXT/DOCX
+# ==========================================================
 if menu == "Generar Contrato":
     st.subheader("📄 Generar contrato automáticamente")
     if casos.empty:
@@ -1731,10 +1740,38 @@ if menu == "Generar Contrato":
         ctx = build_context(exp)
         generado = render_template(str(tpl["Contenido"]), ctx)
 
-        st.text_area("Vista previa", value=generado, height=350)
+        # ✅ NUEVO: edición manual opcional
+        st.markdown("### ✏️ Edición manual (opcional)")
+        editar_manual = st.checkbox(
+            "Modificar manualmente este contrato",
+            value=False,
+            key="gc_edit_mode"
+        )
+
+        if editar_manual:
+            texto_final = st.text_area(
+                "Contrato (editable)",
+                value=generado,
+                height=420,
+                key="gc_text_edit"
+            )
+        else:
+            st.text_area("Vista previa", value=generado, height=350)
+            texto_final = generado
+
+        # Nombre archivo base
         nombre_archivo = f"Contrato_{exp.replace('/','_')}_{str(tpl['Nombre']).replace(' ','_')}.txt"
-        st.download_button("⬇️ Descargar contrato (TXT)", data=generado.encode("utf-8"), file_name=nombre_archivo)
-        docx_file = generar_docx(generado, titulo=str(tpl.get("Nombre","Contrato")))
+
+        # ✅ Descargar TXT (si editó, descarga lo editado)
+        st.download_button(
+            "⬇️ Descargar contrato (TXT)",
+            data=texto_final.encode("utf-8"),
+            file_name=nombre_archivo,
+            key="gc_dl_txt"
+        )
+
+        # ✅ Descargar WORD (si editó, descarga lo editado)
+        docx_file = generar_docx(texto_final, titulo=str(tpl.get("Nombre","Contrato")))
         if docx_file is None:
             st.warning("⚠️ No se pudo generar Word. Falta instalar python-docx en requirements.txt")
         else:
@@ -1746,11 +1783,24 @@ if menu == "Generar Contrato":
                 key=f"download_word_{exp}_{tpl_id}"
             )
 
+        # ✅ Guardar en generados/ (TXT + DOCX si existe)
         if st.button("💾 Guardar en carpeta generados/", key="gc_save"):
-            out_path = os.path.join(GENERADOS_DIR, nombre_archivo)
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write(generado)
-            st.success(f"✅ Guardado en {out_path}")
+            # Guardar TXT (si editó, guarda editado)
+            out_txt = os.path.join(GENERADOS_DIR, nombre_archivo)
+            with open(out_txt, "w", encoding="utf-8") as f:
+                f.write(texto_final)
+
+            # Guardar DOCX (si python-docx está disponible)
+            out_docx = None
+            if docx_file is not None:
+                out_docx = os.path.join(GENERADOS_DIR, nombre_archivo.replace(".txt", ".docx"))
+                with open(out_docx, "wb") as f:
+                    f.write(docx_file.getbuffer())
+
+            st.success("✅ Guardado en carpeta generados/")
+            st.info(out_txt)
+            if out_docx:
+                st.info(out_docx)
 
 # ==========================================================
 # USUARIOS
