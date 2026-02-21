@@ -1576,7 +1576,14 @@ if menu == "Generar Contrato":
         st.text_area("Vista previa", value=generado, height=350)
         nombre_archivo = f"Contrato_{exp.replace('/','_')}_{str(tpl['Nombre']).replace(' ','_')}.txt"
         st.download_button("⬇️ Descargar contrato (TXT)", data=generado.encode("utf-8"), file_name=nombre_archivo)
+        docx_file = generar_docx(generado, titulo=nombre_contrato)
 
+        st.download_button(
+            "⬇️ Descargar contrato (WORD)",
+            data=docx_file,
+            file_name=nombre_archivo.replace(".txt", ".docx"),
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )    
         if st.button("💾 Guardar en carpeta generados/", key="gc_save"):
             out_path = os.path.join(GENERADOS_DIR, nombre_archivo)
             with open(out_path, "w", encoding="utf-8") as f:
@@ -2205,3 +2212,63 @@ try:
                 st.rerun()
 except Exception:
     pass
+# ==========================================================
+# PARCHE SQLITE – SINCRONIZACIÓN CSV ↔ SQLITE (NO OBLIGATORIO)
+# ==========================================================
+import sqlite3
+
+SQLITE_DB = "data.db"
+
+def csv_to_sqlite():
+    conn = sqlite3.connect(SQLITE_DB)
+    for key, path in FILES.items():
+        try:
+            df = load_df(key)
+            df.to_sql(key, conn, if_exists="replace", index=False)
+        except Exception as e:
+            st.warning(f"No se pudo exportar {key}: {e}")
+    conn.close()
+
+def sqlite_to_csv():
+    conn = sqlite3.connect(SQLITE_DB)
+    cur = conn.cursor()
+    tables = cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()
+
+    for (table,) in tables:
+        try:
+            df = pd.read_sql(f"SELECT * FROM {table}", conn)
+            if table in FILES:
+                df.to_csv(FILES[table], index=False)
+        except Exception as e:
+            st.warning(f"No se pudo importar {table}: {e}")
+    conn.close()
+
+# UI mínima (oculta, segura)
+with st.sidebar.expander("🗄️ Base de Datos (SQLite)", expanded=False):
+    st.caption("CSV sigue siendo la fuente principal")
+    if st.button("⬆️ Exportar CSV → SQLite"):
+        csv_to_sqlite()
+        st.success("✅ CSV exportado a SQLite (data.db)")
+
+    if st.button("⬇️ Importar SQLite → CSV"):
+        sqlite_to_csv()
+        st.success("✅ SQLite importado a CSV")
+# ==========================================================
+# PARCHE WORD – DESCARGAR CONTRATOS EN .DOCX
+# ==========================================================
+from docx import Document
+from io import BytesIO
+
+def generar_docx(texto: str, titulo="Contrato"):
+    doc = Document()
+    doc.add_heading(titulo, level=1)
+
+    for linea in texto.split("\n"):
+        doc.add_paragraph(linea)
+
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
