@@ -1768,7 +1768,8 @@ if menu == "Cronograma de Cuotas":
 
 # ==========================================================
 # ACTUACIONES (FICHA por caso/cliente + historial + reporte)
-# + ✅ Aranceles / Otros gastos (sumables por caso)
+# + ✅ Aranceles / Otros gastos
+# + ✅ Pagado / Pendiente por cliente
 # ==========================================================
 if menu == "Actuaciones":
     st.subheader("🧾 Actuaciones – Ficha por caso y cliente")
@@ -1800,7 +1801,6 @@ if menu == "Actuaciones":
                 prox_fecha = st.text_input("Fecha próxima acción (YYYY-MM-DD opcional)")
                 link = st.text_input("Link OneDrive (opcional)")
 
-                # ✅ NUEVOS CAMPOS ECONÓMICOS
                 col1, col2 = st.columns(2)
                 with col1:
                     aranceles = st.number_input(
@@ -1812,6 +1812,13 @@ if menu == "Actuaciones":
                         "Otros gastos (S/)",
                         min_value=0.0, step=50.0, value=0.0
                     )
+
+                # ✅ CHECK PAGADO / PENDIENTE
+                gastos_pagado = st.checkbox(
+                    "✅ Gastos pagados por el cliente",
+                    value=False,
+                    help="Si está marcado, estos gastos NO se consideran deuda"
+                )
 
                 notas = st.text_area("Notas (opcional)", height=100)
                 submit = st.form_submit_button("Guardar actuación")
@@ -1830,6 +1837,7 @@ if menu == "Actuaciones":
                         "LinkOneDrive": link,
                         "CostasAranceles": float(aranceles),
                         "Gastos": float(otros_gastos),
+                        "GastosPagado": "1" if gastos_pagado else "0",
                         "Notas": notas
                     }, "actuaciones")
                     save_df("actuaciones", actuaciones)
@@ -1871,12 +1879,12 @@ if menu == "Actuaciones":
                         if str(r.get("LinkOneDrive","")).strip():
                             st.markdown(f"**Link OneDrive:** {r.get('LinkOneDrive')}")
 
-                        st.write(
-                            f"**Aranceles / Costas:** S/ {money(r.get('CostasAranceles',0)):,.2f}"
-                        )
-                        st.write(
-                            f"**Otros gastos:** S/ {money(r.get('Gastos',0)):,.2f}"
-                        )
+                        st.write(f"**Aranceles / Costas:** S/ {money(r.get('CostasAranceles',0)):,.2f}")
+                        st.write(f"**Otros gastos:** S/ {money(r.get('Gastos',0)):,.2f}")
+
+                        estado = "✅ Pagado" if str(r.get("GastosPagado","0")) == "1" else "⏳ Pendiente"
+                        st.write(f"**Estado de gastos:** {estado}")
+
                         st.write(f"**Notas:** {r.get('Notas','')}")
 
                 st.divider()
@@ -1918,6 +1926,11 @@ if menu == "Actuaciones":
                             step=50.0
                         )
 
+                    gastos_pagado_e = st.checkbox(
+                        "✅ Gastos pagados por el cliente",
+                        value=str(fila.get("GastosPagado","0")) == "1"
+                    )
+
                     notas_e = st.text_area(
                         "Notas",
                         value=str(fila["Notas"]),
@@ -1930,12 +1943,15 @@ if menu == "Actuaciones":
                         actuaciones.loc[idx, [
                             "Fecha","TipoActuacion","Resumen",
                             "ProximaAccion","FechaProximaAccion",
-                            "LinkOneDrive","CostasAranceles","Gastos","Notas"
+                            "LinkOneDrive","CostasAranceles",
+                            "Gastos","GastosPagado","Notas"
                         ]] = [
                             fecha_e, tipo_e, resumen_e,
                             prox_e, prox_fecha_e,
                             link_e, float(aranceles_e),
-                            float(gastos_e), notas_e
+                            float(gastos_e),
+                            "1" if gastos_pagado_e else "0",
+                            notas_e
                         ]
                         save_df("actuaciones", actuaciones)
                         st.success("✅ Actualizado")
@@ -1948,7 +1964,7 @@ if menu == "Actuaciones":
                     st.rerun()
 
         # ==================================================
-        # REPORTE (SUMAS)
+        # REPORTE (SUMAS – informativo)
         # ==================================================
         with tab_rep:
             st.markdown("### Reporte de historial de actuaciones")
@@ -1964,7 +1980,6 @@ if menu == "Actuaciones":
 
             rep = rep.sort_values("Fecha", ascending=False) if not rep.empty else rep
 
-            # ✅ SUMAS POR CASO
             total_aranceles = money(rep.get("CostasAranceles", pd.Series()).sum())
             total_gastos = money(rep.get("Gastos", pd.Series()).sum())
             total_costos = total_aranceles + total_gastos
@@ -1980,34 +1995,6 @@ if menu == "Actuaciones":
                 "⬇️ Descargar historial (CSV)",
                 rep.to_csv(index=False).encode("utf-8"),
                 f"historial_actuaciones_{exp_r.replace('/','_')}.csv"
-            )
-
-            # TXT
-            lines = [
-                f"HISTORIAL DE ACTUACIONES – EXPEDIENTE: {exp_r}",
-                "-"*60,
-                f"TOTAL ARANCELES / COSTAS: S/ {total_aranceles:,.2f}",
-                f"TOTAL OTROS GASTOS: S/ {total_gastos:,.2f}",
-                f"TOTAL GENERAL: S/ {total_costos:,.2f}",
-                "-"*60,
-            ]
-
-            if rep.empty:
-                lines.append("No hay actuaciones registradas.")
-            else:
-                for _, r in rep.iterrows():
-                    lines.append(f"Fecha: {r.get('Fecha','')}")
-                    lines.append(f"Tipo: {r.get('TipoActuacion','')}")
-                    lines.append(f"Resumen: {r.get('Resumen','')}")
-                    lines.append(f"Aranceles: S/ {money(r.get('CostasAranceles',0)):,.2f}")
-                    lines.append(f"Otros gastos: S/ {money(r.get('Gastos',0)):,.2f}")
-                    lines.append("-"*60)
-
-            txt = "\n".join(lines)
-            st.download_button(
-                "⬇️ Descargar historial (TXT)",
-                txt.encode("utf-8"),
-                f"historial_actuaciones_{exp_r.replace('/','_')}.txt"
             )
 
 # ==========================================================
