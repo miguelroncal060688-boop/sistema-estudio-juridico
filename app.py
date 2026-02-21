@@ -1513,7 +1513,7 @@ p = st.text_input(
     autocomplete="off"
 )
 
-                rol = st.selectbox("Rol", ["admin","abogado","asistente"])
+    rol = st.selectbox("Rol", ["admin","abogado","asistente"])
                 abogado_id = st.selectbox(
                     "Abogado asociado",
                     options=list(abogado_map.keys()),
