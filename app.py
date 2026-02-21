@@ -1558,7 +1558,34 @@ def render_template(text: str, ctx: dict) -> str:
     for k, v in ctx.items():
         out = out.replace(k, v)
     return out
+# ==========================================================
+# WORD (.DOCX) – soporte seguro
+# ==========================================================
+from io import BytesIO
 
+try:
+    from docx import Document
+except Exception:
+    Document = None
+
+def generar_docx(texto: str, titulo="Contrato"):
+    """
+    Genera un DOCX en memoria para descargar.
+    Si python-docx no está instalado, devuelve None.
+    """
+    if Document is None:
+        return None
+
+    doc = Document()
+    doc.add_heading(str(titulo), level=1)
+
+    for linea in str(texto).split("\n"):
+        doc.add_paragraph(linea)
+
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
 if menu == "Generar Contrato":
     st.subheader("📄 Generar contrato automáticamente")
     if casos.empty:
