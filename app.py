@@ -2822,38 +2822,36 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
         )
 
    with col3:
-    # ✅ Reset SOLO para ADMIN (abogado y asistente NO lo ven)
-    if st.session_state.get('rol') == 'admin':
-        with st.expander("⚠️ Reset total del repositorio", expanded=False):
-            st.warning("Esto borra: 1) repo_contratos.csv y 2) TODOS los archivos dentro de generados/.")
-            confirm = st.checkbox("Entiendo el riesgo y deseo borrar todo", key="rc_reset_confirm")
-            confirm2 = st.text_input("Escribe BORRAR para confirmar", value="", key="rc_reset_confirm2")
+        # ✅ Reset SOLO para ADMIN (abogado y asistente NO lo ven)
+        if st.session_state.get('rol') == 'admin':
+            with st.expander("⚠️ Reset total del repositorio", expanded=False):
+                st.warning("Esto borra: 1) repo_contratos.csv y 2) TODOS los archivos dentro de generados/.")
+                confirm = st.checkbox("Entiendo el riesgo y deseo borrar todo", key="rc_reset_confirm")
+                confirm2 = st.text_input("Escribe BORRAR para confirmar", value="", key="rc_reset_confirm2")
 
-            if st.button(
-                "🧨 BORRAR TODO DEFINITIVAMENTE",
-                key="rc_reset_btn",
-                disabled=(not confirm) or (confirm2.strip().upper() != "BORRAR")
-            ):
-                try:
-                    # borrar CSV repositorio
-                    if os.path.exists(REPO_CONTRATOS_FILE):
-                        os.remove(REPO_CONTRATOS_FILE)
+                if st.button(
+                    "🧨 BORRAR TODO DEFINITIVAMENTE",
+                    key="rc_reset_btn",
+                    disabled=(not confirm) or (confirm2.strip().upper() != "BORRAR")
+                ):
+                    try:
+                        if os.path.exists(REPO_CONTRATOS_FILE):
+                            os.remove(REPO_CONTRATOS_FILE)
 
-                    # borrar archivos generados
-                    if os.path.exists(GENERADOS_DIR):
-                        for fn in os.listdir(GENERADOS_DIR):
-                            try:
-                                os.remove(os.path.join(GENERADOS_DIR, fn))
-                            except Exception:
-                                pass
+                        if os.path.exists(GENERADOS_DIR):
+                            for fn in os.listdir(GENERADOS_DIR):
+                                try:
+                                    os.remove(os.path.join(GENERADOS_DIR, fn))
+                                except Exception:
+                                    pass
 
-                    st.success("✅ Repositorio y generados/ eliminados por completo")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error al resetear: {e}")
-    else:
-        # ✅ Importante: bloque vacío explícito para evitar IndentationError
-        st.write("")
+                        st.success("✅ Repositorio y generados/ eliminados por completo")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al resetear: {e}")
+        else:
+            # evita bloque vacío y errores de indentación
+            st.write("")
     # ====== Cuerpo del repositorio (TU UI ORIGINAL, intacto) ======
     repo = _repo_contratos_load()
     if repo.empty:
