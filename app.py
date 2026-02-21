@@ -2816,37 +2816,6 @@ try:
 except Exception:
     pass
 
-# ==========================================================
-# FINANZAS – Honorarios por tipo (Act. Adm / Instancias / Otros)
-# ==========================================================
-try:
-    if 'menu' in globals() and menu == 'Honorarios':
-        st.divider()
-        st.markdown('## 🧾 Honorarios por tipo (MARCA 006)')
-        df_ht = load_df('honorarios_tipo')
-        st.dataframe(df_ht.sort_values('ID', ascending=False), use_container_width=True)
-        exp_list = casos['Expediente'].tolist() if 'casos' in globals() and not casos.empty else []
-        if exp_list:
-            exp = st.selectbox('Expediente', exp_list, key='ht_exp')
-            tipo = st.selectbox('Tipo', ['Actuación Administrativa','Primera Instancia','Segunda Instancia','Casación','Otros'], key='ht_tipo')
-            monto = st.number_input('Monto (S/)', min_value=0.0, step=100.0, key='ht_monto')
-            notas = st.text_input('Notas', key='ht_notas')
-            if st.button('Guardar honorario por tipo', key='ht_save'):
-                new_id = next_id(df_ht)
-                df_ht = add_row(df_ht, {
-                    'ID': new_id,
-                    'Caso': normalize_key(exp),
-                    'Tipo': tipo,
-                    'Monto': float(monto),
-                    'Notas': notas,
-                    'FechaRegistro': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                }, 'honorarios_tipo')
-                save_df('honorarios_tipo', df_ht)
-                _audit_log('ADD', 'honorarios_tipo', new_id, f'{exp} | {tipo} | {monto}')
-                st.success('✅ Guardado')
-                st.rerun()
-except Exception:
-    pass
 
 # ==========================================================
 # CONSULTAS – abogado a cargo + costo + reporte ingresos
