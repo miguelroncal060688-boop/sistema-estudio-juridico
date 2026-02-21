@@ -2563,7 +2563,13 @@ def _repo_sync_contratos():
                     repo.at[i,k] = scanned_by[fn].get(k, repo.at[i,k])
 
     existing = set(repo['Archivo'].astype(str).tolist()) if not repo.empty else set()
-    nid = int(pd.to_numeric(repo.get('ID', pd.Series([0])), errors='coerce').max() or 0) + 1
+    _max_id = pd.to_numeric(
+        repo.get('ID', pd.Series([0])),
+        errors='coerce'
+    ).fillna(0).max()
+
+    nid = int(_max_id) + 1
+
 
     new_rows = []
     for r in scanned:
