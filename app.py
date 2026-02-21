@@ -1955,13 +1955,19 @@ if menu == "Generar Contrato":
 if menu == "Usuarios":
     require_admin()
     st.subheader("👥 Usuarios (vinculados a abogados)")
+
     users = load_df("usuarios")
+
     st.dataframe(users[["Usuario","Rol","AbogadoID","Activo","Creado"]], use_container_width=True)
     st.download_button("⬇️ Descargar usuarios (CSV)", users.to_csv(index=False).encode("utf-8"), "usuarios.csv")
 
     abogado_map = {str(r["ID"]): str(r["Nombre"]) for _, r in abogados.iterrows()} if not abogados.empty else {}
+
     accion = st.radio("Acción", ["Nuevo","Cambiar contraseña","Activar/Desactivar","Eliminar"], horizontal=True)
 
+    # =========================
+    # NUEVO
+    # =========================
     if accion == "Nuevo":
         if abogados.empty:
             st.warning("Primero registra abogados para vincular usuarios.")
@@ -1976,21 +1982,98 @@ if menu == "Usuarios":
                     format_func=lambda x: abogado_map.get(str(x), f"Abogado ID {x}")
                 )
                 submit = st.form_submit_button("Crear usuario")
-                if submit:
-                    if (users["Usuario"].astype(str) == str(u)).any():
-                        st.error("Ese usuario ya existe.")
-                    else:
-                        users = add_row(users, {
-                            "Usuario": u,
-                            "PasswordHash": sha256(p),
-                            "Rol": rol,
-                            "AbogadoID": str(abogado_id),
-                            "Activo": "1",
-                            "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        }, "usuarios")
-                        save_df("usuarios", users)
-                        st.success("✅ Usuario creado y vinculado")
-                        st.rerun()
+
+            if submit:
+                if not str(u).strip():
+                    st.error("Usuario no puede estar vacío.")
+                elif not str(p).strip():
+                    st.error("Contraseña no puede estar vacía.")
+                elif (users["Usuario"].astype(str) == str(u)).any():
+                    st.error("Ese usuario ya existe.")
+                else:
+                    users = add_row(users, {
+                        "Usuario": str(u).strip(),
+                        "PasswordHash": sha256(p),
+                        "Rol": rol,
+                        "AbogadoID": str(abogado_id) if rol in ["abogado","asistente"] else "",
+                        "Activo": "1",
+                        "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }, "usuarios")
+                    save_df("usuarios", users)
+                    st.success("✅ Usuario creado y vinculado")
+                    st.rerun()
+
+    # =========================
+    # CAMBIAR CONTRASEÑA
+    # =========================
+    elif accion == "Cambiar contraseña":
+        if users.empty:
+            st.info("No hay usuarios.")
+        else:
+            sel_user = st.selectbox("Selecciona usuario", users["Usuario"].astype(str).tolist(), key="usr_sel_pwd")
+            nueva = st.text_input("Nueva contraseña", type="password", key="usr_new_pwd")
+            nueva2 = st.text_input("Repite la nueva contraseña", type="password", key="usr_new_pwd2")
+
+            if st.button("✅ Guardar nueva contraseña", key="usr_pwd_save"):
+                if not str(nueva).strip():
+                    st.error("La contraseña no puede estar vacía.")
+                elif nueva != nueva2:
+                    st.error("Las contraseñas no coinciden.")
+                else:
+                    idx = users.index[users["Usuario"].astype(str) == str(sel_user)][0]
+                    users.at[idx, "PasswordHash"] = sha256(nueva)
+                    save_df("usuarios", users)
+                    st.success("✅ Contraseña actualizada")
+                    st.rerun()
+
+    # =========================
+    # ACTIVAR / DESACTIVAR
+    # =========================
+    elif accion == "Activar/Desactivar":
+        if users.empty:
+            st.info("No hay usuarios.")
+        else:
+            sel_user = st.selectbox("Selecciona usuario", users["Usuario"].astype(str).tolist(), key="usr_sel_active")
+            fila = users[users["Usuario"].astype(str) == str(sel_user)].iloc[0]
+            activo = str(fila.get("Activo","1")) == "1"
+
+            st.write(f"Estado actual: {'🟢 Activo' if activo else '🔴 Inactivo'}")
+
+            # Protección mínima: no desactivar admin
+            if str(sel_user) == "admin":
+                st.info("El usuario admin no se puede desactivar aquí.")
+            else:
+                label = "🚫 Desactivar" if activo else "✅ Activar"
+                if st.button(label, key="usr_toggle_active"):
+                    idx = users.index[users["Usuario"].astype(str) == str(sel_user)][0]
+                    users.at[idx, "Activo"] = "0" if activo else "1"
+                    save_df("usuarios", users)
+                    st.success("✅ Estado actualizado")
+                    st.rerun()
+
+    # =========================
+    # ELIMINAR
+    # =========================
+    elif accion == "Eliminar":
+        if users.empty:
+            st.info("No hay usuarios.")
+        else:
+            sel_user = st.selectbox("Selecciona usuario a eliminar", users["Usuario"].astype(str).tolist(), key="usr_sel_del")
+
+            # Protecciones mínimas
+            if str(sel_user) == "admin":
+                st.warning("No se puede eliminar el usuario admin.")
+            elif str(sel_user) == str(st.session_state.get("usuario","")):
+                st.warning("No puedes eliminar tu propia cuenta mientras estás conectado.")
+            else:
+                st.warning("⚠️ Esta acción no se puede deshacer.")
+                confirm = st.text_input("Escribe ELIMINAR para confirmar", key="usr_del_confirm")
+
+                if st.button("🗑️ Eliminar usuario", key="usr_del_btn", disabled=(confirm.strip().upper() != "ELIMINAR")):
+                    users = users[users["Usuario"].astype(str) != str(sel_user)].copy()
+                    save_df("usuarios", users)
+                    st.success("✅ Usuario eliminado")
+                    st.rerun()
 
 # ==========================================================
 # REPORTES (pestañas)
