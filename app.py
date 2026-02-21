@@ -1963,8 +1963,8 @@ if menu == "Actuaciones":
                     st.success("✅ Eliminado")
                     st.rerun()
 
-        # ==================================================
-        # REPORTE (SUMAS – informativo)
+# ==================================================
+        # REPORTE (PENDIENTE vs PAGADO por cliente)
         # ==================================================
         with tab_rep:
             st.markdown("### Reporte de historial de actuaciones")
@@ -1980,22 +1980,35 @@ if menu == "Actuaciones":
 
             rep = rep.sort_values("Fecha", ascending=False) if not rep.empty else rep
 
-            total_aranceles = money(rep.get("CostasAranceles", pd.Series()).sum())
-            total_gastos = money(rep.get("Gastos", pd.Series()).sum())
-            total_costos = total_aranceles + total_gastos
+            if rep.empty:
+                st.info("No hay actuaciones registradas para este expediente.")
+            else:
+                # Normalizar numéricos
+                rep["CostasAranceles"] = pd.to_numeric(rep.get("CostasAranceles", 0), errors="coerce").fillna(0.0)
+                rep["Gastos"] = pd.to_numeric(rep.get("Gastos", 0), errors="coerce").fillna(0.0)
+                rep["GastosTotal"] = rep["CostasAranceles"] + rep["Gastos"]
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Aranceles / Costas", f"S/ {total_aranceles:,.2f}")
-            c2.metric("Otros gastos", f"S/ {total_gastos:,.2f}")
-            c3.metric("Total gastos", f"S/ {total_costos:,.2f}")
+                # Estado pagado (si no existe, queda como pendiente)
+                rep["GastosPagado"] = rep.get("GastosPagado", "0").astype(str)
 
-            st.dataframe(rep, use_container_width=True)
+                # ✅ separar pagados vs pendientes
+                pendiente = rep.loc[rep["GastosPagado"] != "1", "GastosTotal"].sum()
+                pagado = rep.loc[rep["GastosPagado"] == "1", "GastosTotal"].sum()
 
-            st.download_button(
-                "⬇️ Descargar historial (CSV)",
-                rep.to_csv(index=False).encode("utf-8"),
-                f"historial_actuaciones_{exp_r.replace('/','_')}.csv"
-            )
+                c1, c2 = st.columns(2)
+                c1.metric("⏳ Gastos pendientes del cliente (deuda)", f"S/ {pendiente:,.2f}")
+                c2.metric("✅ Gastos pagados por el cliente", f"S/ {pagado:,.2f}")
+
+                # Mostrar estado por fila (opcional pero útil)
+                rep["EstadoGastos"] = rep["GastosPagado"].apply(lambda x: "Pagado" if x == "1" else "Pendiente")
+
+                st.dataframe(rep, use_container_width=True)
+
+                st.download_button(
+                    "⬇️ Descargar historial (CSV)",
+                    rep.to_csv(index=False).encode("utf-8"),
+                    f"historial_actuaciones_{exp_r.replace('/','_')}.csv"
+                )
 
 # ==========================================================
 # CONSULTAS: autoguardado + abogado + costo + proforma + historial + reporte ingresos
