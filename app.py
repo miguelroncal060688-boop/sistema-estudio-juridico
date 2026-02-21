@@ -90,6 +90,12 @@ SCHEMAS = {
 
     # ✅ CONSULTAS: nuevo módulo
     "consultas": ["ID","Fecha","Cliente","Caso","Abogado","Consulta","Estrategia","CostoConsulta","HonorariosPropuestos","Proforma","LinkOneDrive","Notas"],
+    
+    "instancias": ["ID","Caso","TipoInstancia","EstadoActual","Resultado","Accion","Honorarios","FechaRegistro"],
+    "honorarios_tipo": ["ID","Caso","Tipo","Monto","Notas","FechaRegistro"],
+    "contratos": ["ID","Numero","Año","Sigla","NombreContrato","Caso","Cliente","Abogado","Estado","Archivo","Fecha"],
+    "auditoria_mod": ["ID","Fecha","Usuario","Rol","Accion","Entidad","EntidadID","Detalle"],
+
 }
 # ============================
 # MARCA 006: ESQUEMAS PARA ARCHIVOS NUEVOS (evita KeyError)
