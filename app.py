@@ -535,11 +535,11 @@ def reset_total(borrar_archivos=False):
     users = pd.DataFrame(columns=SCHEMAS["usuarios"])
     users = pd.concat([users, pd.DataFrame([{
         "Usuario":"admin",
-        "PasswordHash": sha256(ADMIN_BOOTSTRAP_PASSWORD)
+        "PasswordHash": sha256(ADMIN_BOOTSTRAP_PASSWORD),
         "Rol":"admin",
         "AbogadoID":"",
         "Activo":"1",
-        "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }])], ignore_index=True)
     users.to_csv(FILES["usuarios"], index=False)
 
