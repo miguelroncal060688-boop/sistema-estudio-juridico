@@ -2103,3 +2103,444 @@ try:
                 st.rerun()
 except Exception:
     pass
+# ==========================================================
+# 🧩 PARCHE ÚNICO – EXTENSIONES VISIBLES (PEGAR AL FINAL)
+# No modifica lo existente. Agrega módulos nuevos en sidebar.
+# ==========================================================
+
+import json
+
+# ----------------------------
+# Helpers seguros (no rompen)
+# ----------------------------
+def _safe_df(df, cols):
+    if df is None:
+        df = pd.DataFrame(columns=cols)
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+    return df[cols]
+
+def _ensure_extra_csv(path, cols):
+    if not os.path.exists(path):
+        pd.DataFrame(columns=cols).to_csv(path, index=False)
+        return
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        df = pd.DataFrame(columns=cols)
+    df = _safe_df(df, cols)
+    df.to_csv(path, index=False)
+
+def _load_extra_csv(path, cols):
+    _ensure_extra_csv(path, cols)
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        df = pd.DataFrame(columns=cols)
+    return _safe_df(df, cols)
+
+def _save_extra_csv(path, df, cols):
+    df = _safe_df(df, cols)
+    df.to_csv(path, index=False)
+
+def _upsert(df, key_col, key_val, values: dict):
+    key_val = str(key_val)
+    idxs = df.index[df[key_col].astype(str) == key_val].tolist()
+    if not idxs:
+        row = {key_col: key_val}
+        row.update(values)
+        return pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+    i = idxs[0]
+    for k, v in values.items():
+        df.at[i, k] = v
+    return df
+
+def _readonly():
+    try:
+        return st.session_state.get("rol") == "asistente"
+    except Exception:
+        return False
+
+# ----------------------------------------------------------
+# Archivos EXTRA (no rompen tus CSV actuales)
+# ----------------------------------------------------------
+ABOGADOS_EXTRA_FILE = "abogados_extra.csv"
+ABOGADOS_EXTRA_COLS = ["AbogadoID", "ColegioProfesional", "DistritoJudicial", "ReferenciaDomicilio", "Notas"]
+
+CLIENTES_EXTRA_FILE = "clientes_extra.csv"
+CLIENTES_EXTRA_COLS = [
+    "ClienteID","TipoCliente","ContactoEmergencia","CelularEmergencia",
+    "RazonSocial","RUC","RepresentanteLegal","PartidaElectronica","SedeRegistral"
+]
+
+CASOS_EXTRA_FILE = "casos_extra.csv"
+CASOS_EXTRA_COLS = ["Expediente", "Juzgado", "DistritoJudicial", "Contraparte", "ContraparteDoc"]
+
+INSTANCIAS_FILE = "instancias.csv"
+INSTANCIAS_COLS = ["ID","Expediente","TipoInstancia","EstadoActual","Resultado","Accion","Honorarios","FechaRegistro"]
+
+HON_TIPO_FILE = "honorarios_tipo.csv"
+HON_TIPO_COLS = ["ID","Expediente","Tipo","Monto","Notas","FechaRegistro"]
+
+CUOTAS_PAGADAS_FILE = "cuotas_pagadas.csv"
+CUOTAS_PAGADAS_COLS = ["CuotaID","Pagada","FechaPagoReal","Obs"]
+
+_ensure_extra_csv(ABOGADOS_EXTRA_FILE, ABOGADOS_EXTRA_COLS)
+_ensure_extra_csv(CLIENTES_EXTRA_FILE, CLIENTES_EXTRA_COLS)
+_ensure_extra_csv(CASOS_EXTRA_FILE, CASOS_EXTRA_COLS)
+_ensure_extra_csv(INSTANCIAS_FILE, INSTANCIAS_COLS)
+_ensure_extra_csv(HON_TIPO_FILE, HON_TIPO_COLS)
+_ensure_extra_csv(CUOTAS_PAGADAS_FILE, CUOTAS_PAGADAS_COLS)
+
+def _next_id_csv(df, col="ID"):
+    if df.empty:
+        return 1
+    m = pd.to_numeric(df[col], errors="coerce").max()
+    return int(m) + 1 if pd.notna(m) else len(df) + 1
+
+# ----------------------------------------------------------
+# Sidebar: Panel Extensiones (siempre visible)
+# ----------------------------------------------------------
+with st.sidebar.expander("🧩 Extensiones (1–19)", expanded=False):
+    ext = st.radio(
+        "Abrir módulo",
+        [
+            "(cerrado)",
+            "Abogados (Extendido)",
+            "Clientes (Extendido)",
+            "Casos (Extendido)",
+            "Instancias",
+            "Honorarios por Tipo",
+            "Cuotas: marcar pagada ✅",
+            "Contratos: placeholders extendidos",
+        ],
+        index=0
+    )
+
+# ----------------------------------------------------------
+# MÓDULO: Abogados (Extendido)
+# ----------------------------------------------------------
+if ext == "Abogados (Extendido)":
+    st.subheader("👨‍⚖️ Abogados (Extendido)")
+    if 'abogados' not in globals() or abogados.empty:
+        st.info("No hay abogados registrados.")
+    else:
+        ab_id = st.selectbox("Abogado ID", abogados["ID"].tolist())
+        base = abogados[abogados["ID"] == ab_id].iloc[0].to_dict()
+
+        st.markdown("### Datos base (solo lectura)")
+        st.write({k: base.get(k, "") for k in ["ID","Nombre","DNI","Celular","Correo","Colegiatura","Domicilio Procesal","Casilla Electronica","Casilla Judicial"]})
+
+        df = _load_extra_csv(ABOGADOS_EXTRA_FILE, ABOGADOS_EXTRA_COLS)
+        cur = df[df["AbogadoID"].astype(str) == str(ab_id)]
+        cur = cur.iloc[0].to_dict() if not cur.empty else {"ColegioProfesional":"","DistritoJudicial":"","ReferenciaDomicilio":"","Notas":""}
+
+        st.markdown("### Campos extendidos")
+        colegio = st.text_input("Colegio Profesional", value=str(cur.get("ColegioProfesional","")))
+        distrito = st.text_input("Distrito Judicial", value=str(cur.get("DistritoJudicial","")))
+        referencia = st.text_input("Referencia del Domicilio Procesal", value=str(cur.get("ReferenciaDomicilio","")))
+        notas = st.text_area("Notas del abogado", value=str(cur.get("Notas","")), height=120)
+
+        if st.button("💾 Guardar (Abogados Extendidos)", disabled=_readonly()):
+            df2 = _upsert(df, "AbogadoID", ab_id, {
+                "ColegioProfesional": colegio,
+                "DistritoJudicial": distrito,
+                "ReferenciaDomicilio": referencia,
+                "Notas": notas
+            })
+            _save_extra_csv(ABOGADOS_EXTRA_FILE, df2, ABOGADOS_EXTRA_COLS)
+            st.success("✅ Guardado en abogados_extra.csv")
+            st.rerun()
+
+# ----------------------------------------------------------
+# MÓDULO: Clientes (Extendido)
+# ----------------------------------------------------------
+if ext == "Clientes (Extendido)":
+    st.subheader("👥 Clientes (Extendido)")
+    if 'clientes' not in globals() or clientes.empty:
+        st.info("No hay clientes registrados.")
+    else:
+        cid = st.selectbox("Cliente ID", clientes["ID"].tolist())
+        base = clientes[clientes["ID"] == cid].iloc[0].to_dict()
+
+        st.markdown("### Datos base (solo lectura)")
+        st.write({k: base.get(k, "") for k in ["ID","Nombre","DNI","Celular","Correo","Direccion"]})
+
+        df = _load_extra_csv(CLIENTES_EXTRA_FILE, CLIENTES_EXTRA_COLS)
+        cur = df[df["ClienteID"].astype(str) == str(cid)]
+        cur = cur.iloc[0].to_dict() if not cur.empty else {c:"" for c in CLIENTES_EXTRA_COLS}
+
+        tipo = st.selectbox("Tipo de cliente", ["Natural","Jurídica"], index=0 if str(cur.get("TipoCliente","Natural"))!="Jurídica" else 1)
+        contacto = st.text_input("Contacto de emergencia", value=str(cur.get("ContactoEmergencia","")))
+        cel_em = st.text_input("Celular de contacto (emergencia)", value=str(cur.get("CelularEmergencia","")))
+
+        st.markdown("### Datos si es Persona Jurídica")
+        rs = st.text_input("Razón Social", value=str(cur.get("RazonSocial","")))
+        ruc = st.text_input("RUC", value=str(cur.get("RUC","")))
+        rep = st.text_input("Representante Legal", value=str(cur.get("RepresentanteLegal","")))
+        partida = st.text_input("Partida Electrónica", value=str(cur.get("PartidaElectronica","")))
+        sede = st.text_input("Sede Registral", value=str(cur.get("SedeRegistral","")))
+
+        if st.button("💾 Guardar (Clientes Extendidos)", disabled=_readonly()):
+            df2 = _upsert(df, "ClienteID", cid, {
+                "TipoCliente": tipo,
+                "ContactoEmergencia": contacto,
+                "CelularEmergencia": cel_em,
+                "RazonSocial": rs,
+                "RUC": ruc,
+                "RepresentanteLegal": rep,
+                "PartidaElectronica": partida,
+                "SedeRegistral": sede
+            })
+            _save_extra_csv(CLIENTES_EXTRA_FILE, df2, CLIENTES_EXTRA_COLS)
+            st.success("✅ Guardado en clientes_extra.csv")
+            st.rerun()
+
+# ----------------------------------------------------------
+# MÓDULO: Casos (Extendido)
+# ----------------------------------------------------------
+if ext == "Casos (Extendido)":
+    st.subheader("📁 Casos (Extendido)")
+    if 'casos' not in globals() or casos.empty:
+        st.info("No hay casos registrados.")
+    else:
+        exp = st.selectbox("Expediente", casos["Expediente"].tolist())
+        base = casos[casos["Expediente"] == exp].iloc[0].to_dict()
+
+        st.markdown("### Datos base (solo lectura)")
+        st.write({k: base.get(k, "") for k in ["Expediente","Cliente","Abogado","Materia","Instancia","EstadoCaso"]})
+
+        df = _load_extra_csv(CASOS_EXTRA_FILE, CASOS_EXTRA_COLS)
+        cur = df[df["Expediente"].astype(str) == str(exp)]
+        cur = cur.iloc[0].to_dict() if not cur.empty else {c:"" for c in CASOS_EXTRA_COLS}
+
+        juz = st.text_input("Juzgado", value=str(cur.get("Juzgado","")))
+        dist = st.text_input("Distrito Judicial", value=str(cur.get("DistritoJudicial","")))
+        cont = st.text_input("Contraparte", value=str(cur.get("Contraparte","")))
+        doc = st.text_input("DNI/RUC Contraparte", value=str(cur.get("ContraparteDoc","")))
+
+        if st.button("💾 Guardar (Casos Extendidos)", disabled=_readonly()):
+            df2 = _upsert(df, "Expediente", exp, {
+                "Juzgado": juz,
+                "DistritoJudicial": dist,
+                "Contraparte": cont,
+                "ContraparteDoc": doc
+            })
+            _save_extra_csv(CASOS_EXTRA_FILE, df2, CASOS_EXTRA_COLS)
+            st.success("✅ Guardado en casos_extra.csv")
+            st.rerun()
+
+# ----------------------------------------------------------
+# MÓDULO: Instancias
+# ----------------------------------------------------------
+if ext == "Instancias":
+    st.subheader("📑 Instancias por Caso")
+    if 'casos' not in globals() or casos.empty:
+        st.info("No hay casos registrados.")
+    else:
+        exp = st.selectbox("Expediente", casos["Expediente"].tolist(), key="ext_inst_exp")
+        df = _load_extra_csv(INSTANCIAS_FILE, INSTANCIAS_COLS)
+        sub = df[df["Expediente"].astype(str) == str(exp)].copy()
+
+        st.markdown("### Instancias registradas")
+        st.dataframe(sub.sort_values("ID", ascending=False), use_container_width=True)
+
+        st.divider()
+        st.markdown("### Registrar instancia")
+        tipo = st.selectbox("Tipo de instancia", ["Actuación Administrativa","Primera Instancia","Segunda Instancia","Casación","Otros"])
+        estado = st.text_input("Estado actual")
+        resultado = st.text_input("Resultado")
+        accion = st.text_input("Acción")
+        honor = st.number_input("Honorarios (S/)", min_value=0.0, step=100.0)
+
+        if st.button("💾 Guardar instancia", disabled=_readonly()):
+            new_id = _next_id_csv(df)
+            df.loc[len(df)] = [
+                new_id, str(exp), tipo, estado, resultado, accion, float(honor),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ]
+            _save_extra_csv(INSTANCIAS_FILE, df, INSTANCIAS_COLS)
+            st.success("✅ Instancia guardada (instancias.csv)")
+            st.rerun()
+
+# ----------------------------------------------------------
+# MÓDULO: Honorarios por Tipo
+# ----------------------------------------------------------
+if ext == "Honorarios por Tipo":
+    st.subheader("🧾 Honorarios por Tipo")
+    if 'casos' not in globals() or casos.empty:
+        st.info("No hay casos registrados.")
+    else:
+        exp = st.selectbox("Expediente", casos["Expediente"].tolist(), key="ext_ht_exp")
+        df = _load_extra_csv(HON_TIPO_FILE, HON_TIPO_COLS)
+        sub = df[df["Expediente"].astype(str) == str(exp)].copy()
+
+        st.markdown("### Registrados")
+        st.dataframe(sub.sort_values("ID", ascending=False), use_container_width=True)
+
+        st.divider()
+        tipo = st.selectbox("Tipo", ["Actuación Administrativa","Primera Instancia","Segunda Instancia","Casación","Otros"])
+        monto = st.number_input("Monto (S/)", min_value=0.0, step=100.0)
+        notas = st.text_input("Notas", value="")
+
+        if st.button("💾 Guardar honorario tipo", disabled=_readonly()):
+            new_id = _next_id_csv(df)
+            df.loc[len(df)] = [
+                new_id, str(exp), tipo, float(monto), notas,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ]
+            _save_extra_csv(HON_TIPO_FILE, df, HON_TIPO_COLS)
+            st.success("✅ Guardado (honorarios_tipo.csv)")
+            st.rerun()
+
+# ----------------------------------------------------------
+# MÓDULO: Cuotas pagadas (checkbox)
+# ----------------------------------------------------------
+if ext == "Cuotas: marcar pagada ✅":
+    st.subheader("📅 Cuotas – marcar pagada ✅")
+    if 'cuotas' not in globals() or cuotas.empty:
+        st.info("No hay cuotas registradas en tu cronograma.")
+    else:
+        dfp = _load_extra_csv(CUOTAS_PAGADAS_FILE, CUOTAS_PAGADAS_COLS)
+
+        view = cuotas.copy()
+        def _flag(cid):
+            hit = dfp[dfp["CuotaID"].astype(str) == str(cid)]
+            if hit.empty:
+                return "⏳"
+            v = str(hit.iloc[0].get("Pagada","")).strip()
+            return "✅" if v in ["1","true","si","sí","x"] else "⏳"
+        view["Pagada"] = view["ID"].apply(_flag)
+        st.dataframe(view.sort_values("FechaVenc", ascending=False), use_container_width=True)
+
+        sel = st.selectbox("Cuota ID", cuotas["ID"].tolist())
+        current = dfp[dfp["CuotaID"].astype(str) == str(sel)]
+        cur_p = False if current.empty else str(current.iloc[0].get("Pagada","")) in ["1","true","si","sí","x"]
+
+        pag = st.checkbox("Pagada ✅", value=cur_p)
+        f_real = st.text_input("Fecha pago real (YYYY-MM-DD)", value="" if current.empty else str(current.iloc[0].get("FechaPagoReal","")))
+        obs = st.text_input("Observación", value="" if current.empty else str(current.iloc[0].get("Obs","")))
+
+        if st.button("💾 Guardar estado", disabled=_readonly()):
+            dfp2 = _upsert(dfp, "CuotaID", sel, {
+                "Pagada": "1" if pag else "0",
+                "FechaPagoReal": f_real,
+                "Obs": obs
+            })
+            _save_extra_csv(CUOTAS_PAGADAS_FILE, dfp2, CUOTAS_PAGADAS_COLS)
+            st.success("✅ Estado guardado (cuotas_pagadas.csv)")
+            st.rerun()
+
+# ----------------------------------------------------------
+# DASHBOARD: Semáforo (inyecta sección adicional si estás en Dashboard)
+# ----------------------------------------------------------
+try:
+    if 'menu' in globals() and menu == "Dashboard":
+        st.divider()
+        st.markdown("### ⏱️ Actuaciones pendientes (semáforo)")
+
+        if 'actuaciones' in globals() and not actuaciones.empty:
+            def _dias(x):
+                d = to_date_safe(x)
+                return None if d is None else (d - date.today()).days
+
+            tmp = actuaciones.copy()
+            tmp["Dias"] = tmp["FechaProximaAccion"].apply(_dias)
+            tmp = tmp[tmp["Dias"].notna()].copy()
+            tmp = tmp[tmp["Dias"] >= 0].copy()
+
+            def _sem(d):
+                if d <= 2: return "🔴"
+                if 3 <= d <= 5: return "🟡"
+                return "🟢"
+
+            tmp["Sem"] = tmp["Dias"].apply(_sem)
+            tmp.sort_values("Dias", inplace=True)
+            st.dataframe(tmp[["Sem","Caso","TipoActuacion","ProximaAccion","FechaProximaAccion","Dias"]], use_container_width=True)
+        else:
+            st.info("No hay actuaciones con fecha de próxima acción.")
+except Exception:
+    pass
+
+# ----------------------------------------------------------
+# CONTRATOS: placeholders extendidos + generador alternativo
+# ----------------------------------------------------------
+if ext == "Contratos: placeholders extendidos":
+    st.subheader("📄 Contratos – Placeholders extendidos")
+
+    st.markdown("### Placeholders disponibles")
+    st.write("**Caso:** {{CASO_<COLUMNA>}} (ej: {{CASO_MATERIA}}, {{CASO_JUZGADO}})")
+    st.write("**Cliente:** {{CLIENTE_<COLUMNA>}} (ej: {{CLIENTE_NOMBRE}}, {{CLIENTE_RUC}}, {{CLIENTE_RAZONSOCIAL}})")
+    st.write("**Abogado:** {{ABOGADO_<COLUMNA>}} (ej: {{ABOGADO_NOMBRE}}, {{ABOGADO_COLEGIOPROFESIONAL}})")
+    st.write("**Básicos:** {{EXPEDIENTE}}, {{FECHA_HOY}}")
+
+    if 'casos' not in globals() or casos.empty:
+        st.info("No hay casos.")
+    elif 'plantillas' not in globals() or plantillas.empty:
+        st.info("No hay plantillas.")
+    else:
+        exp = st.selectbox("Expediente", casos["Expediente"].tolist(), key="ext_ct_exp")
+        tpl_id = st.selectbox("Plantilla ID", plantillas["ID"].tolist(), key="ext_ct_tpl")
+        tpl = plantillas[plantillas["ID"] == tpl_id].iloc[0]
+
+        # construir contexto extendido (usa base + extras)
+        ctx = {"{{EXPEDIENTE}}": str(exp), "{{FECHA_HOY}}": date.today().strftime("%Y-%m-%d")}
+
+        # Caso base
+        c = casos[casos["Expediente"] == exp].iloc[0].to_dict()
+        for k, v in c.items():
+            ctx[f"{{{{CASO_{str(k).upper()}}}}}"] = str(v)
+
+        # Caso extras
+        df_ce = _load_extra_csv(CASOS_EXTRA_FILE, CASOS_EXTRA_COLS)
+        ce = df_ce[df_ce["Expediente"].astype(str) == str(exp)]
+        if not ce.empty:
+            ce = ce.iloc[0].to_dict()
+            for k, v in ce.items():
+                ctx[f"{{{{CASO_{str(k).upper()}}}}}"] = str(v)
+
+        # Cliente base
+        cli_name = str(c.get("Cliente",""))
+        cli = None
+        if 'clientes' in globals() and not clientes.empty:
+            hit = clientes[clientes["Nombre"].astype(str) == cli_name]
+            if not hit.empty:
+                cli = hit.iloc[0].to_dict()
+                for k, v in cli.items():
+                    ctx[f"{{{{CLIENTE_{str(k).upper()}}}}}"] = str(v)
+
+        # Cliente extras
+        if cli is not None:
+            df_cx = _load_extra_csv(CLIENTES_EXTRA_FILE, CLIENTES_EXTRA_COLS)
+            cx = df_cx[df_cx["ClienteID"].astype(str) == str(cli.get("ID",""))]
+            if not cx.empty:
+                cx = cx.iloc[0].to_dict()
+                for k, v in cx.items():
+                    ctx[f"{{{{CLIENTE_{str(k).upper()}}}}}"] = str(v)
+
+        # Abogado base
+        ab_name = str(c.get("Abogado",""))
+        ab = None
+        if 'abogados' in globals() and not abogados.empty:
+            hit = abogados[abogados["Nombre"].astype(str) == ab_name]
+            if not hit.empty:
+                ab = hit.iloc[0].to_dict()
+                for k, v in ab.items():
+                    ctx[f"{{{{ABOGADO_{str(k).upper()}}}}}"] = str(v)
+
+        # Abogado extras
+        if ab is not None:
+            df_ax = _load_extra_csv(ABOGADOS_EXTRA_FILE, ABOGADOS_EXTRA_COLS)
+            ax = df_ax[df_ax["AbogadoID"].astype(str) == str(ab.get("ID",""))]
+            if not ax.empty:
+                ax = ax.iloc[0].to_dict()
+                for k, v in ax.items():
+                    ctx[f"{{{{ABOGADO_{str(k).upper()}}}}}"] = str(v)
+
+        generado = str(tpl.get("Contenido",""))
+        for k, v in ctx.items():
+            generado = generado.replace(k, v)
+
+        st.text_area("Vista previa (extendida)", value=generado, height=320)
+        st.download_button("⬇️ Descargar contrato (TXT)", generado.encode("utf-8"), f"Contrato_EXT_{str(exp).replace('/','_')}.txt")
