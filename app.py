@@ -2754,11 +2754,19 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
         if view.empty:
             st.info('No hay resultados con esos filtros.')
         else:
-            sel_id = int(st.selectbox('Selecciona ID', view['ID'].tolist(), key='rc_sel_id'))
-            row = repo[repo['ID']==sel_id].iloc[0]
+            # ✅ No convertir a int: manejar IDs como texto para evitar ValueError
+            sel_id = st.selectbox(
+                'Selecciona ID',
+                view['ID'].astype(str).tolist(),
+                key='rc_sel_id'
+            )
+
+            # ✅ Buscar la fila comparando como string (evita mismatch por tipos)
+            row = repo[repo['ID'].astype(str) == str(sel_id)].iloc[0]
 
             notas = st.text_area('Notas', value=str(row.get('Notas','')), height=90, key='rc_notas')
             sigla = st.text_input('Sigla', value=str(row.get('Sigla','CLS')), key='rc_sigla')
+
 
             # Guardar notas en repo
             idx = repo.index[repo['ID']==sel_id][0]
