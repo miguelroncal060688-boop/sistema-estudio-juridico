@@ -2821,7 +2821,7 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
             key='rc_export'
         )
 
-   with col3:
+    with col3:
         # ✅ Reset SOLO para ADMIN (abogado y asistente NO lo ven)
         if st.session_state.get('rol') == 'admin':
             with st.expander("⚠️ Reset total del repositorio", expanded=False):
