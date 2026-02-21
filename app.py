@@ -615,82 +615,131 @@ menu = st.sidebar.radio("📌 Menú", [
 brand_header()
 
 # ==========================================================
-# DASHBOARD COMPLETO (CORREGIDO + SUMA DE TODAS LAS CUOTAS LITIS)
+# DASHBOARD COMPLETO (ROBUSTO: suma honorarios y litis, pendiente correcto)
 # ==========================================================
 if menu == "Dashboard":
-    df_res = resumen_financiero_df()
+
+    # =========================
+    # Helpers locales (seguros)
+    # =========================
+    def _to_num(s):
+        return pd.to_numeric(s, errors="coerce").fillna(0.0)
+
+    def _norm(s):
+        return normalize_key(s)
+
+    # =========================
+    # Construir resumen por caso (sin depender del "último registro")
+    # =========================
+    rows = []
+    if casos.empty:
+        df_res = pd.DataFrame(columns=[
+            "Expediente","Cliente","Materia",
+            "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
+            "Cuota Litis Calculada","Pagado Litis","Saldo Litis"
+        ])
+    else:
+        # Copias defensivas
+        h = honorarios.copy() if 'honorarios' in globals() else load_df("honorarios")
+        he = honorarios_etapas.copy() if 'honorarios_etapas' in globals() else load_df("honorarios_etapas")
+        ph = pagos_honorarios.copy() if 'pagos_honorarios' in globals() else load_df("pagos_honorarios")
+
+        cl = cuota_litis.copy() if 'cuota_litis' in globals() else load_df("cuota_litis")
+        pl = pagos_litis.copy() if 'pagos_litis' in globals() else load_df("pagos_litis")
+
+        # Normalizar claves
+        for df in [h, he, ph, cl, pl]:
+            if df is not None and not df.empty and "Caso" in df.columns:
+                df["Caso"] = df["Caso"].apply(_norm)
+
+        # Normalizar montos
+        if h is not None and not h.empty and "Monto Pactado" in h.columns:
+            h["Monto Pactado"] = _to_num(h["Monto Pactado"])
+        if he is not None and not he.empty and "Monto Pactado" in he.columns:
+            he["Monto Pactado"] = _to_num(he["Monto Pactado"])
+        if ph is not None and not ph.empty and "Monto" in ph.columns:
+            ph["Monto"] = _to_num(ph["Monto"])
+        if pl is not None and not pl.empty and "Monto" in pl.columns:
+            pl["Monto"] = _to_num(pl["Monto"])
+
+        # Cuota litis: calcular CuotaCalc por fila y sumar (todas)
+        if cl is not None and not cl.empty:
+            mb = "Monto Base" if "Monto Base" in cl.columns else None
+            pc = "Porcentaje" if "Porcentaje" in cl.columns else None
+            if mb is not None:
+                cl[mb] = _to_num(cl[mb])
+            else:
+                cl["Monto Base"] = 0.0
+                mb = "Monto Base"
+            if pc is not None:
+                cl[pc] = _to_num(cl[pc])
+            else:
+                cl["Porcentaje"] = 0.0
+                pc = "Porcentaje"
+            cl["CuotaCalc"] = cl[mb] * cl[pc] / 100.0
+        else:
+            cl = pd.DataFrame(columns=["Caso","CuotaCalc"])
+
+        # Armar resumen por expediente
+        for _, c in casos.iterrows():
+            exp = _norm(c.get("Expediente",""))
+
+            # 1) Honorario pactado:
+            #    Si existen honorarios por etapa, sumarlos; si no, sumar todos los honorarios totales.
+            pactado = 0.0
+            if he is not None and not he.empty:
+                sub_et = he[he["Caso"] == exp]
+                if not sub_et.empty:
+                    pactado = float(sub_et["Monto Pactado"].sum())
+
+            if pactado == 0.0 and h is not None and not h.empty:
+                sub_h = h[h["Caso"] == exp]
+                pactado = float(sub_h["Monto Pactado"].sum()) if not sub_h.empty else 0.0
+
+            # 2) Pagos honorarios (sumar todos)
+            pagado_h = 0.0
+            if ph is not None and not ph.empty:
+                sub_ph = ph[ph["Caso"] == exp]
+                pagado_h = float(sub_ph["Monto"].sum()) if not sub_ph.empty else 0.0
+
+            # 3) Cuota litis calculada (sumar todas)
+            calc_litis = 0.0
+            if cl is not None and not cl.empty and "CuotaCalc" in cl.columns:
+                sub_cl = cl[cl["Caso"] == exp]
+                calc_litis = float(sub_cl["CuotaCalc"].sum()) if not sub_cl.empty else 0.0
+
+            # 4) Pagos litis (sumar todos)
+            pagado_l = 0.0
+            if pl is not None and not pl.empty:
+                sub_pl = pl[pl["Caso"] == exp]
+                pagado_l = float(sub_pl["Monto"].sum()) if not sub_pl.empty else 0.0
+
+            # 5) Pendientes (nunca negativos)
+            pend_h = max(0.0, pactado - pagado_h)
+            pend_l = max(0.0, calc_litis - pagado_l)
+
+            rows.append([
+                exp,
+                c.get("Cliente",""),
+                c.get("Materia",""),
+                float(pactado),
+                float(pagado_h),
+                float(pend_h),
+                float(calc_litis),
+                float(pagado_l),
+                float(pend_l)
+            ])
+
+        df_res = pd.DataFrame(rows, columns=[
+            "Expediente","Cliente","Materia",
+            "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
+            "Cuota Litis Calculada","Pagado Litis","Saldo Litis"
+        ])
+
+    # =========================
+    # Estado de cuotas (vencidas / por vencer) - se mantiene igual que lo tenías
+    # =========================
     df_estado = cuotas_status_all()
-
-    # =========================
-    # Normalización defensiva de columnas numéricas
-    # =========================
-    if not df_res.empty:
-        for col in [
-            "Honorario Pactado",
-            "Honorario Pagado",
-            "Honorario Pendiente",
-            "Cuota Litis Calculada",
-            "Pagado Litis",
-            "Saldo Litis",
-        ]:
-            if col not in df_res.columns:
-                df_res[col] = 0
-            df_res[col] = pd.to_numeric(df_res[col], errors="coerce").fillna(0.0)
-
-        # ✅ Recalcular SIEMPRE pendientes (evita negativos)
-        df_res["Honorario Pendiente"] = (
-            df_res["Honorario Pactado"] - df_res["Honorario Pagado"]
-        ).clip(lower=0)
-
-        # =========================
-        # ✅ FIX CLAVE: sumar TODAS las cuotas litis del caso
-        # (si hay varias filas en cuota_litis.csv, ya no se toma solo la última)
-        # =========================
-        try:
-            # usar df global si existe, sino cargar
-            df_cl = cuota_litis if 'cuota_litis' in globals() else load_df("cuota_litis")
-            if df_cl is not None and not df_cl.empty:
-                tmp = df_cl.copy()
-                # clave del caso/expediente
-                if "Caso" in tmp.columns:
-                    tmp["Caso"] = tmp["Caso"].apply(normalize_key)
-
-                # Monto Base y Porcentaje -> CuotaCalc
-                mb_col = "Monto Base" if "Monto Base" in tmp.columns else None
-                pc_col = "Porcentaje" if "Porcentaje" in tmp.columns else None
-
-                if mb_col and pc_col:
-                    tmp[mb_col] = pd.to_numeric(tmp[mb_col], errors="coerce").fillna(0.0)
-                    tmp[pc_col] = pd.to_numeric(tmp[pc_col], errors="coerce").fillna(0.0)
-                    tmp["CuotaCalc"] = tmp[mb_col] * tmp[pc_col] / 100.0
-
-                    # sumar todas las cuotas por expediente
-                    cl_sum = (
-                        tmp.groupby("Caso", as_index=False)["CuotaCalc"]
-                        .sum()
-                        .rename(columns={"Caso": "Expediente", "CuotaCalc": "Cuota Litis Calculada"})
-                    )
-
-                    # normalizar expediente en resumen
-                    if "Expediente" in df_res.columns:
-                        df_res["Expediente"] = df_res["Expediente"].apply(normalize_key)
-
-                        # reemplazar el valor calculado por el total real
-                        df_res = df_res.drop(columns=["Cuota Litis Calculada"], errors="ignore").merge(
-                            cl_sum, on="Expediente", how="left"
-                        )
-                        df_res["Cuota Litis Calculada"] = pd.to_numeric(
-                            df_res["Cuota Litis Calculada"], errors="coerce"
-                        ).fillna(0.0)
-        except Exception:
-            # si algo falla, no rompe dashboard: queda con el cálculo anterior
-            pass
-
-        # ✅ Recalcular saldo litis con el total ya corregido
-        df_res["Saldo Litis"] = (
-            pd.to_numeric(df_res["Cuota Litis Calculada"], errors="coerce").fillna(0.0)
-            - pd.to_numeric(df_res["Pagado Litis"], errors="coerce").fillna(0.0)
-        ).clip(lower=0)
 
     # =========================
     # Totales para métricas
@@ -726,10 +775,7 @@ if menu == "Dashboard":
 
     st.divider()
     st.markdown("### 📌 Detalle por caso")
-    if df_res.empty:
-        st.info("Aún no hay información financiera.")
-    else:
-        st.dataframe(df_res, use_container_width=True)
+    st.dataframe(df_res, use_container_width=True)
 
     st.divider()
     st.markdown("### 📅 Cuotas vencidas / por vencer")
@@ -753,7 +799,6 @@ if menu == "Dashboard":
         df_res.to_csv(index=False).encode("utf-8"),
         "reporte_casos.csv"
     )
-
 # ==========================================================
 # FICHA DEL CASO (sin cambios)
 # ==========================================================
