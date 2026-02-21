@@ -1611,7 +1611,7 @@ if menu == "Generar Contrato":
                 "⬇️ Descargar contrato (WORD)",
                 data=docx_file,
                 file_name=nombre_archivo.replace(".txt", ".docx"),
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 key=f"download_word_{exp}_{tpl_id}
             )
 
