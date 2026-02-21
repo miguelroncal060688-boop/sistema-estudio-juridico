@@ -11,13 +11,16 @@ from datetime import date, datetime
 # Añadidos: Edit/Borrar Honorarios + Ficha/Historial Actuaciones (con link OneDrive)
 #           + Módulo Consultas (con proforma e historial)
 # ==========================================================
-APP_VERSION = "MARCA 004"
+APP_VERSION = "MARCA 006"  # Integración completa 1-19
 
 # ==========================================================
 # CONFIGURACIÓN GENERAL
 # ==========================================================
 APP_NAME = "Estudio Jurídico Roncal Liñan y Asociados"
 CONTROL_PASSWORD = st.secrets.get("CONTROL_PASSWORD", "control123")  # clave panel de control
+ADMIN_BOOTSTRAP_PASSWORD = st.secrets.get("ADMIN_BOOTSTRAP_PASSWORD", "estudio123")
+PASSWORD_PEPPER = st.secrets.get("PASSWORD_PEPPER", "")
+
 
 DATA_DIR = "."
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
@@ -53,6 +56,10 @@ FILES = {
 
     # ✅ NUEVO: consultas
     "consultas": "consultas.csv",
+    "instancias": "instancias.csv",
+    "honorarios_tipo": "honorarios_tipo.csv",
+    "contratos": "contratos.csv",
+    "auditoria_mod": "auditoria_mod.csv",
 }
 
 # ==========================================================
@@ -60,9 +67,9 @@ FILES = {
 # ==========================================================
 SCHEMAS = {
     "usuarios": ["Usuario","PasswordHash","Rol","AbogadoID","Activo","Creado"],
-    "clientes": ["ID","Nombre","DNI","Celular","Correo","Direccion","Observaciones"],
-    "abogados": ["ID","Nombre","DNI","Celular","Correo","Colegiatura","Domicilio Procesal","Casilla Electronica","Casilla Judicial"],
-    "casos": ["ID","Cliente","Abogado","Expediente","Año","Materia","Instancia","Pretension","Observaciones","EstadoCaso","FechaInicio"],
+    "clientes": ["ID","TipoCliente","Nombre","DNI","Celular","Correo","Direccion","Observaciones","ContactoEmergencia","CelularEmergencia","RazonSocial","RUC","RepresentanteLegal","PartidaElectronica","SedeRegistral"],
+    "abogados": ["ID","Nombre","DNI","Celular","Correo","Colegiatura","ColegioProfesional","Domicilio Procesal","ReferenciaDomicilio","Casilla Electronica","DistritoJudicial","Casilla Judicial","Notas"],
+    "casos": ["ID","Cliente","Abogado","Expediente","Año","Materia","Instancia","Pretension","Juzgado","DistritoJudicial","Contraparte","ContraparteDoc","Observaciones","EstadoCaso","FechaInicio"],
 
     "honorarios": ["ID","Caso","Monto Pactado","Notas","FechaRegistro"],
     "honorarios_etapas": ["ID","Caso","Etapa","Monto Pactado","Notas","FechaRegistro"],
@@ -76,13 +83,13 @@ SCHEMAS = {
     "cuotas": ["ID","Caso","Tipo","NroCuota","FechaVenc","Monto","Notas"],
 
     # ✅ ACTUACIONES: agrego Cliente y LinkOneDrive (sin romper datos antiguos)
-    "actuaciones": ["ID","Caso","Cliente","Fecha","TipoActuacion","Resumen","ProximaAccion","FechaProximaAccion","LinkOneDrive","Notas"],
+    "actuaciones": ["ID","Caso","Cliente","Fecha","TipoActuacion","Resumen","ProximaAccion","FechaProximaAccion","LinkOneDrive","CostasAranceles","Gastos","Notas"],
 
     "documentos": ["ID","Caso","Tipo","NombreArchivo","Ruta","Fecha","Notas"],
     "plantillas": ["ID","Nombre","Contenido","Notas","Creado"],
 
     # ✅ CONSULTAS: nuevo módulo
-    "consultas": ["ID","Fecha","Cliente","Caso","Consulta","Estrategia","HonorariosPropuestos","Proforma","LinkOneDrive","Notas"],
+    "consultas": ["ID","Fecha","Cliente","Caso","Abogado","Consulta","Estrategia","CostoConsulta","HonorariosPropuestos","Proforma","LinkOneDrive","Notas"],
 }
 
 ETAPAS_HONORARIOS = ["Primera instancia", "Segunda instancia", "Casación", "Otros"]
@@ -92,7 +99,8 @@ TIPOS_CUOTA = ["Honorarios", "CuotaLitis"]
 # UTILIDADES
 # ==========================================================
 def sha256(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    base = (PASSWORD_PEPPER or "") + str(text)
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 def normalize_key(x) -> str:
     if pd.isna(x):
@@ -269,7 +277,7 @@ usuarios = load_df("usuarios")
 if usuarios[usuarios["Usuario"].astype(str) == "admin"].empty:
     usuarios = add_row(usuarios, {
         "Usuario": "admin",
-        "PasswordHash": sha256(st.secrets.get("ADMIN_BOOTSTRAP_PASSWORD", "estudio123")),
+        "PasswordHash": sha256(ADMIN_BOOTSTRAP_PASSWORD),
         "Rol": "admin",
         "AbogadoID": "",
         "Activo": "1",
@@ -503,7 +511,7 @@ def reset_total(borrar_archivos=False):
     users = pd.DataFrame(columns=SCHEMAS["usuarios"])
     users = pd.concat([users, pd.DataFrame([{
         "Usuario":"admin",
-        "PasswordHash": sha256(st.secrets.get("ADMIN_BOOTSTRAP_PASSWORD", "estudio123")),
+        "PasswordHash": sha256(ADMIN_BOOTSTRAP_PASSWORD),
         "Rol":"admin",
         "AbogadoID":"",
         "Activo":"1",
@@ -544,7 +552,7 @@ with st.sidebar.expander("🔒 Panel de control", expanded=False):
         wipe = st.checkbox("Borrar también uploads/ y generados/ (solo reset total)", value=False)
         if st.button("🧨 Reset total (borra todo)"):
             reset_total(borrar_archivos=wipe)
-            st.success("✅ Reset total aplicado. admin/estudio123")
+            st.success("✅ Reset total aplicado. Usuario: admin. Contraseña: la configurada en Secrets.")
             st.rerun()
     else:
         st.info("Panel protegido. (Pide la clave)")
@@ -552,7 +560,7 @@ with st.sidebar.expander("🔒 Panel de control", expanded=False):
 # ==========================================================
 # MENÚ MARCA 004 (sin reducir)
 # ==========================================================
-menu = st.sidebar.selectbox("📌 Menú", [
+menu = st.sidebar.radio("📌 Menú", [
     "Dashboard",
     "Ficha del Caso",
     "Clientes",
@@ -1792,92 +1800,280 @@ except Exception:
 
 # =================== FIN PARCHE MARCA 004 ==================
 
-# ==============================
-# MARCA 005 – INTEGRACIONES VISIBLES
-# (Extiende MARCA 004 sin modificar su núcleo)
-# Incluye: UX, Clientes/Abogados extra, Casos/Instancias,
-# Finanzas (cuotas/honorarios), Dashboard inteligente,
-# Contratos extendidos, Roles/Auditoría/Búsqueda.
-# ==============================
+# ==========================================================
+# ======= MARCA 006 – EXTENSIONES (Roles, Auditoría, Búsqueda, Dashboard Proactivo)
+# ==========================================================
 
-# --- MENÚ DESPLEGABLE (ANTI-TECLADO) ---
-try:
-    if 'menu' in globals():
+def _audit_log(accion, entidad='', entidad_id='', detalle=''):
+    try:
+        df = load_df('auditoria_mod')
+        new_id = next_id(df)
+        df = add_row(df, {
+            'ID': new_id,
+            'Fecha': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'Usuario': st.session_state.get('usuario',''),
+            'Rol': st.session_state.get('rol',''),
+            'Accion': accion,
+            'Entidad': entidad,
+            'EntidadID': str(entidad_id),
+            'Detalle': detalle
+        }, 'auditoria_mod')
+        save_df('auditoria_mod', df)
+    except Exception:
         pass
+
+
+def _can_edit():
+    return st.session_state.get('rol') in ['admin','abogado']
+
+def _is_readonly():
+    return st.session_state.get('rol') == 'asistente'
+
+
+def _filter_cases_by_role(df_casos):
+    # Abogado: solo sus casos (match por nombre de abogado)
+    if st.session_state.get('rol') == 'abogado':
+        user = st.session_state.get('usuario','')
+        # si existe abogados.csv y abogado_id, intentamos mapear a Nombre
+        ab_name = None
+        try:
+            if 'abogados' in globals() and not abogados.empty:
+                # Si el usuario tiene abogado_id, usarlo
+                aid = st.session_state.get('abogado_id','')
+                if str(aid).strip() and (abogados['ID'].astype(str) == str(aid)).any():
+                    ab_name = abogados[abogados['ID'].astype(str)==str(aid)].iloc[0].get('Nombre','')
+        except Exception:
+            pass
+        name = ab_name if ab_name else user
+        return df_casos[df_casos['Abogado'].astype(str) == str(name)].copy()
+    return df_casos
+
+# Aplicar filtro visual a casos y tablas dependientes
+try:
+    if 'casos' in globals() and not casos.empty:
+        _casos_f = _filter_cases_by_role(casos)
+        if len(_casos_f) != len(casos):
+            casos = _casos_f
 except Exception:
     pass
 
-# --- DASHBOARD INTELIGENTE (SEMAFORO ACTUACIONES) ---
+# ==========================================================
+# BÚSQUEDA GLOBAL (sidebar) – expediente, cliente, DNI, abogado, materia
+# ==========================================================
 try:
-    if 'menu' in globals() and menu == 'Dashboard':
-        st.divider()
-        st.markdown('### ⏱️ Actuaciones pendientes (semáforo)')
-        if 'actuaciones' in globals() and not actuaciones.empty:
-            from datetime import date
-            def _dias(x):
-                try:
-                    d = pd.to_datetime(x).date()
-                    return (d - date.today()).days
-                except Exception:
-                    return None
-            tmp = actuaciones.copy()
-            tmp['Dias'] = tmp['FechaProximaAccion'].apply(_dias)
-            pend = tmp[tmp['Dias'].notna()].copy()
-            def _color(d):
-                if d <= 2: return '🔴'
-                if 3 <= d <= 5: return '🟡'
-                if d > 5: return '🟢'
-                return ''
-            pend['Estado'] = pend['Dias'].apply(_color)
-            pend.sort_values('Dias', inplace=True)
-            st.dataframe(pend[['Estado','Caso','TipoActuacion','ProximaAccion','FechaProximaAccion','Dias']], use_container_width=True)
-        else:
-            st.info('No hay actuaciones pendientes.')
-except Exception:
-    pass
-
-# --- BÚSQUEDA GLOBAL ---
-try:
-    with st.sidebar.expander('🔎 Búsqueda global'):
-        q = st.text_input('Buscar (expediente, cliente, abogado, materia)')
+    with st.sidebar.expander('🔎 Búsqueda', expanded=False):
+        q = st.text_input('Buscar (expediente/cliente/DNI/abogado/materia)')
         if q:
-            ql = q.lower()
-            res = []
-            if 'casos' in globals():
+            ql = q.lower().strip()
+            results = []
+            if 'casos' in globals() and not casos.empty:
                 for _, r in casos.iterrows():
-                    hay = any(ql in str(r.get(k,'')).lower() for k in ['Expediente','Cliente','Abogado','Materia'])
-                    if hay:
-                        res.append({'Tipo':'Caso','Expediente':r.get('Expediente',''),'Cliente':r.get('Cliente',''),'Abogado':r.get('Abogado',''),'Materia':r.get('Materia','')})
-            if res:
-                st.dataframe(pd.DataFrame(res), use_container_width=True)
+                    if any(ql in str(r.get(k,'')).lower() for k in ['Expediente','Cliente','Abogado','Materia']):
+                        results.append({'Tipo':'Caso','Clave':r.get('Expediente',''),'Detalle':f"{r.get('Cliente','')} | {r.get('Abogado','')} | {r.get('Materia','')}"})
+            if 'clientes' in globals() and not clientes.empty:
+                for _, r in clientes.iterrows():
+                    if any(ql in str(r.get(k,'')).lower() for k in ['Nombre','DNI','RUC','RazonSocial']):
+                        results.append({'Tipo':'Cliente','Clave':r.get('Nombre',''),'Detalle':str(r.get('DNI','')) or str(r.get('RUC',''))})
+            if 'abogados' in globals() and not abogados.empty:
+                for _, r in abogados.iterrows():
+                    if any(ql in str(r.get(k,'')).lower() for k in ['Nombre','DNI','Colegiatura','ColegioProfesional']):
+                        results.append({'Tipo':'Abogado','Clave':r.get('Nombre',''),'Detalle':str(r.get('Colegiatura',''))})
+            if results:
+                st.dataframe(pd.DataFrame(results), use_container_width=True)
             else:
                 st.info('Sin resultados.')
 except Exception:
     pass
 
-# --- ROLES (VISIBILIDAD BÁSICA) ---
+# ==========================================================
+# DASHBOARD – Actuaciones pendientes con semáforo
+# ==========================================================
 try:
-    if st.session_state.get('rol') == 'abogado' and 'casos' in globals():
-        # Filtra visualmente casos al abogado
-        casos = casos[casos['Abogado'].astype(str) == str(st.session_state.get('usuario',''))]
+    if 'menu' in globals() and menu == 'Dashboard':
+        st.divider()
+        st.markdown('### ⏱️ Actuaciones pendientes (semáforo)')
+        if 'actuaciones' in globals() and not actuaciones.empty:
+            def _dias(x):
+                d = to_date_safe(x)
+                return None if d is None else (d - date.today()).days
+            tmp = actuaciones.copy()
+            tmp['Dias'] = tmp['FechaProximaAccion'].apply(_dias)
+            tmp = tmp[tmp['Dias'].notna()].copy()
+            tmp = tmp[tmp['Dias'] >= 0].copy()
+            def _sem(d):
+                if d <= 2: return '🔴'
+                if 3 <= d <= 5: return '🟡'
+                return '🟢'
+            tmp['Sem'] = tmp['Dias'].apply(_sem)
+            tmp.sort_values('Dias', inplace=True)
+            st.dataframe(tmp[['Sem','Caso','TipoActuacion','ProximaAccion','FechaProximaAccion','Dias']], use_container_width=True)
+        else:
+            st.info('No hay actuaciones con próxima acción registrada.')
 except Exception:
     pass
 
-# --- CONTRATOS: CAMPOS EXTENDIDOS EN CONTEXTO ---
+# ==========================================================
+# FINANZAS – Honorarios por tipo (Act. Adm / Instancias / Otros)
+# ==========================================================
 try:
-    if 'build_context' in globals():
-        _old_build = build_context
-        def build_context(expediente: str):
-            ctx = _old_build(expediente)
-            # Añadir más campos si existen
-            try:
-                c = casos[casos['Expediente']==expediente].iloc[0]
-                ctx.update({
-                    '{{ABOGADO}}': str(c.get('Abogado','')),
-                    '{{ESTADO_CASO}}': str(c.get('EstadoCaso','')),
-                })
-            except Exception:
-                pass
-            return ctx
+    if 'menu' in globals() and menu == 'Honorarios':
+        st.divider()
+        st.markdown('## 🧾 Honorarios por tipo (MARCA 006)')
+        df_ht = load_df('honorarios_tipo')
+        st.dataframe(df_ht.sort_values('ID', ascending=False), use_container_width=True)
+        exp_list = casos['Expediente'].tolist() if 'casos' in globals() and not casos.empty else []
+        if exp_list:
+            exp = st.selectbox('Expediente', exp_list, key='ht_exp')
+            tipo = st.selectbox('Tipo', ['Actuación Administrativa','Primera Instancia','Segunda Instancia','Casación','Otros'], key='ht_tipo')
+            monto = st.number_input('Monto (S/)', min_value=0.0, step=100.0, key='ht_monto')
+            notas = st.text_input('Notas', key='ht_notas')
+            if st.button('Guardar honorario por tipo', key='ht_save'):
+                new_id = next_id(df_ht)
+                df_ht = add_row(df_ht, {
+                    'ID': new_id,
+                    'Caso': normalize_key(exp),
+                    'Tipo': tipo,
+                    'Monto': float(monto),
+                    'Notas': notas,
+                    'FechaRegistro': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }, 'honorarios_tipo')
+                save_df('honorarios_tipo', df_ht)
+                _audit_log('ADD', 'honorarios_tipo', new_id, f'{exp} | {tipo} | {monto}')
+                st.success('✅ Guardado')
+                st.rerun()
+except Exception:
+    pass
+
+# ==========================================================
+# CONSULTAS – abogado a cargo + costo + reporte ingresos
+# ==========================================================
+try:
+    if 'menu' in globals() and menu == 'Consultas':
+        st.divider()
+        st.markdown('## 💼 Consultas – Ingresos')
+        if 'consultas' in globals() and not consultas.empty:
+            dfc = consultas.copy()
+            dfc['CostoConsulta'] = pd.to_numeric(dfc.get('CostoConsulta', 0), errors='coerce').fillna(0.0)
+            rep = dfc.groupby('Abogado', as_index=False)['CostoConsulta'].sum().rename(columns={'CostoConsulta':'IngresosConsultas'})
+            st.dataframe(rep, use_container_width=True)
+            st.download_button('⬇️ Descargar ingresos por consulta (CSV)', rep.to_csv(index=False).encode('utf-8'), 'ingresos_consultas.csv')
+        else:
+            st.info('No hay consultas registradas aún.')
+except Exception:
+    pass
+
+
+
+# ==========================================================
+# MARCA 006 – MENÚS EXTENDIDOS (Abogados/Casos/Instancias)
+# ==========================================================
+try:
+    if 'menu' in globals() and menu == 'Abogados (Extendido)':
+        st.subheader('👨‍⚖️ Abogados (Extendido)')
+        df_extra = load_df('abogados')  # ya con nuevas columnas por schema
+        if abogados.empty:
+            st.info('No hay abogados registrados.')
+        else:
+            sel = st.selectbox('Abogado ID', abogados['ID'].tolist())
+            fila = abogados[abogados['ID'] == sel].iloc[0]
+            st.markdown('### Campos adicionales')
+            colegio = st.text_input('Colegio Profesional', value=str(fila.get('ColegioProfesional','')))
+            distrito = st.text_input('Distrito Judicial', value=str(fila.get('DistritoJudicial','')))
+            referencia = st.text_input('Referencia Domicilio Procesal', value=str(fila.get('ReferenciaDomicilio','')))
+            notas = st.text_area('Notas', value=str(fila.get('Notas','')), height=140)
+            if st.button('💾 Guardar campos extendidos', disabled=_is_readonly()):
+                idx = abogados.index[abogados['ID'] == sel][0]
+                abogados.loc[idx, ['ColegioProfesional','DistritoJudicial','ReferenciaDomicilio','Notas']] = [colegio,distrito,referencia,notas]
+                save_df('abogados', abogados)
+                _audit_log('UPDATE','abogados',sel,'extendido')
+                st.success('✅ Guardado')
+                st.rerun()
+
+    if 'menu' in globals() and menu == 'Casos (Extendido)':
+        st.subheader('📁 Casos (Extendido)')
+        if casos.empty:
+            st.info('No hay casos registrados.')
+        else:
+            exp = st.selectbox('Expediente', casos['Expediente'].tolist())
+            fila = casos[casos['Expediente'] == exp].iloc[0]
+            st.markdown('### Datos judiciales')
+            juzgado = st.text_input('Juzgado', value=str(fila.get('Juzgado','')))
+            distrito = st.text_input('Distrito Judicial', value=str(fila.get('DistritoJudicial','')))
+            contraparte = st.text_input('Contraparte', value=str(fila.get('Contraparte','')))
+            doc = st.text_input('DNI/RUC Contraparte', value=str(fila.get('ContraparteDoc','')))
+            if st.button('💾 Guardar datos judiciales', disabled=_is_readonly()):
+                idx = casos.index[casos['Expediente'] == exp][0]
+                casos.loc[idx, ['Juzgado','DistritoJudicial','Contraparte','ContraparteDoc']] = [juzgado,distrito,contraparte,doc]
+                save_df('casos', casos)
+                _audit_log('UPDATE','casos',exp,'datos judiciales')
+                st.success('✅ Guardado')
+                st.rerun()
+
+    if 'menu' in globals() and menu == 'Instancias':
+        st.subheader('📑 Instancias del Caso')
+        df_i = load_df('instancias')
+        if casos.empty:
+            st.info('No hay casos registrados.')
+        else:
+            exp = st.selectbox('Expediente', casos['Expediente'].tolist(), key='inst_exp')
+            sub = df_i[df_i['Caso'].astype(str) == str(exp)].copy()
+            st.markdown('### Registradas')
+            st.dataframe(sub.sort_values('ID', ascending=False), use_container_width=True)
+            st.divider()
+            st.markdown('### Registrar')
+            tipo = st.selectbox('Tipo de instancia', ['Actuación Administrativa','Primera Instancia','Segunda Instancia','Casación','Otros'])
+            estado = st.text_input('Estado actual')
+            resultado = st.text_input('Resultado')
+            accion = st.text_input('Acción')
+            honor = st.number_input('Honorarios (S/)', min_value=0.0, step=100.0)
+            if st.button('💾 Guardar instancia', disabled=_is_readonly()):
+                new_id = next_id(df_i)
+                df_i = add_row(df_i, {
+                    'ID': new_id,
+                    'Caso': normalize_key(exp),
+                    'TipoInstancia': tipo,
+                    'EstadoActual': estado,
+                    'Resultado': resultado,
+                    'Accion': accion,
+                    'Honorarios': float(honor),
+                    'FechaRegistro': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }, 'instancias')
+                save_df('instancias', df_i)
+                _audit_log('ADD','instancias',new_id,f'{exp}|{tipo}')
+                st.success('✅ Instancia guardada')
+                st.rerun()
+except Exception:
+    pass
+
+
+# ==========================================================
+# MARCA 006 – CLIENTES (Extendido): Natural/Jurídico + Emergencia
+# ==========================================================
+try:
+    if 'menu' in globals() and menu == 'Clientes (Extendido)':
+        st.subheader('👥 Clientes (Extendido)')
+        if clientes.empty:
+            st.info('No hay clientes registrados.')
+        else:
+            sel = st.selectbox('Cliente ID', clientes['ID'].tolist())
+            fila = clientes[clientes['ID'] == sel].iloc[0]
+            tipo = st.selectbox('Tipo de cliente', ['Natural','Jurídica'], index=0 if str(fila.get('TipoCliente','Natural'))!='Jurídica' else 1)
+            contacto = st.text_input('Contacto de emergencia', value=str(fila.get('ContactoEmergencia','')))
+            cel_cont = st.text_input('Celular de contacto (emergencia)', value=str(fila.get('CelularEmergencia','')))
+            # Jurídica
+            rs = st.text_input('Razón Social (si jurídica)', value=str(fila.get('RazonSocial','')))
+            ruc = st.text_input('RUC (si jurídica)', value=str(fila.get('RUC','')))
+            rep = st.text_input('Representante legal', value=str(fila.get('RepresentanteLegal','')))
+            partida = st.text_input('Partida electrónica', value=str(fila.get('PartidaElectronica','')))
+            sede = st.text_input('Sede registral', value=str(fila.get('SedeRegistral','')))
+            if st.button('💾 Guardar extendido', disabled=_is_readonly()):
+                idx = clientes.index[clientes['ID'] == sel][0]
+                clientes.loc[idx, ['TipoCliente','ContactoEmergencia','CelularEmergencia','RazonSocial','RUC','RepresentanteLegal','PartidaElectronica','SedeRegistral']] = [
+                    tipo, contacto, cel_cont, rs, ruc, rep, partida, sede
+                ]
+                save_df('clientes', clientes)
+                _audit_log('UPDATE','clientes',sel,'extendido')
+                st.success('✅ Guardado')
+                st.rerun()
 except Exception:
     pass
