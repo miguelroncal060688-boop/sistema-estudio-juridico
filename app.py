@@ -1230,10 +1230,23 @@ if menu == "Honorarios":
             st.divider()
 
             if modo == "Monto total (registro directo)":
-                monto = st.number_input("Monto pactado (total)", min_value=0.0, step=50.0)
-                notas = st.text_input("Notas", value="")
+                monto = st.number_input(
+                    "Monto pactado (total)",
+                    min_value=0.0,
+                    step=50.0,
+                    key="hon_total_monto_new"
+                )
+                notas = st.text_input(
+                    "Notas",
+                    value="",
+                    key="hon_total_notas_new"
+                )
 
-                if st.button("Guardar honorario total", disabled=is_readonly):
+                if st.button(
+                    "Guardar honorario total",
+                    disabled=is_readonly,
+                    key="hon_total_save_btn"
+                ):
                     honorarios = add_row(honorarios, {
                         "ID": next_id(honorarios),
                         "Caso": _norm(exp),
@@ -1254,14 +1267,35 @@ if menu == "Honorarios":
         st.markdown("### Editar / borrar honorario total")
 
         if not honorarios.empty:
-            sel = st.selectbox("Honorario ID", honorarios["ID"].tolist())
+            sel = st.selectbox(
+                "Honorario ID",
+                honorarios["ID"].tolist(),
+                key="hon_total_sel_id"
+            )
             fila = honorarios[honorarios["ID"] == sel].iloc[0]
 
             with st.form("hon_total_edit"):
-                caso_e = st.text_input("Caso", value=fila["Caso"])
-                monto_e = st.number_input("Monto Pactado", min_value=0.0, value=_num(fila["Monto Pactado"]), step=50.0)
-                notas_e = st.text_input("Notas", value=str(fila.get("Notas","")))
-                submit = st.form_submit_button("Guardar cambios", disabled=is_readonly)
+                caso_e = st.text_input(
+                    "Caso",
+                    value=fila["Caso"],
+                    key="hon_total_caso_edit"
+                )
+                monto_e = st.number_input(
+                    "Monto Pactado",
+                    min_value=0.0,
+                    value=_num(fila["Monto Pactado"]),
+                    step=50.0,
+                    key="hon_total_monto_edit"
+                )
+                notas_e = st.text_input(
+                    "Notas",
+                    value=str(fila.get("Notas","")),
+                    key="hon_total_notas_edit"
+                )
+                submit = st.form_submit_button(
+                    "Guardar cambios",
+                    disabled=is_readonly
+                )
 
             if submit:
                 idx = honorarios.index[honorarios["ID"] == sel][0]
@@ -1271,14 +1305,26 @@ if menu == "Honorarios":
                 st.rerun()
 
             st.warning("⚠️ Eliminar honorario total")
-            confirm = st.text_input("Escribe ELIMINAR para confirmar")
-            if st.button("🗑️ Borrar", disabled=is_readonly or confirm.strip().upper() != "ELIMINAR"):
+            confirm = st.text_input(
+                "Escribe ELIMINAR para confirmar",
+                key="hon_total_del_confirm"
+            )
+            if st.button(
+                "🗑️ Borrar",
+                disabled=is_readonly or confirm.strip().upper() != "ELIMINAR",
+                key="hon_total_del_btn"
+            ):
                 honorarios = honorarios[honorarios["ID"] != sel].copy()
                 save_df("honorarios", honorarios)
                 st.success("✅ Eliminado")
                 st.rerun()
 
-        st.download_button("⬇️ Descargar honorarios total (CSV)", honorarios.to_csv(index=False).encode("utf-8"), "honorarios.csv")
+        st.download_button(
+            "⬇️ Descargar honorarios total (CSV)",
+            honorarios.to_csv(index=False).encode("utf-8"),
+            "honorarios.csv",
+            key="hon_total_dl_csv"
+        )
 
     # ==========================================================
     # TAB ETAPAS / INSTANCIAS
@@ -1290,14 +1336,31 @@ if menu == "Honorarios":
 
         if exp_list:
             exp = st.selectbox("Expediente", exp_list, key="hon_et_exp")
-            etapa = st.selectbox("Instancia / Etapa", ETAPAS_HONORARIOS)
-            monto = st.number_input("Monto pactado", min_value=0.0, step=50.0)
-            notas = st.text_input("Notas", value="")
+            etapa = st.selectbox(
+                "Instancia / Etapa",
+                ETAPAS_HONORARIOS,
+                key="hon_et_etapa_new"
+            )
+            monto = st.number_input(
+                "Monto pactado",
+                min_value=0.0,
+                step=50.0,
+                key="hon_et_monto_new"
+            )
+            notas = st.text_input(
+                "Notas",
+                value="",
+                key="hon_et_notas_new"
+            )
 
             total_et = _sum_etapas(exp)
             st.caption(f"📌 Total por etapas: S/ {total_et:,.2f}")
 
-            if st.button("Guardar honorario por etapa", disabled=is_readonly):
+            if st.button(
+                "Guardar honorario por etapa",
+                disabled=is_readonly,
+                key="hon_et_save_btn"
+            ):
                 honorarios_etapas = add_row(honorarios_etapas, {
                     "ID": next_id(honorarios_etapas),
                     "Caso": _norm(exp),
@@ -1314,16 +1377,41 @@ if menu == "Honorarios":
         st.markdown("### Editar / borrar honorario por etapa")
 
         if not honorarios_etapas.empty:
-            sel = st.selectbox("Honorario Etapa ID", honorarios_etapas["ID"].tolist())
+            sel = st.selectbox(
+                "Honorario Etapa ID",
+                honorarios_etapas["ID"].tolist(),
+                key="hon_et_sel_id"
+            )
             fila = honorarios_etapas[honorarios_etapas["ID"] == sel].iloc[0]
 
             with st.form("hon_et_edit"):
-                caso_e = st.text_input("Caso", value=fila["Caso"])
-                etapa_e = st.selectbox("Instancia / Etapa", ETAPAS_HONORARIOS,
-                                       index=ETAPAS_HONORARIOS.index(fila["Etapa"]) if fila["Etapa"] in ETAPAS_HONORARIOS else 0)
-                monto_e = st.number_input("Monto Pactado", min_value=0.0, value=_num(fila["Monto Pactado"]), step=50.0)
-                notas_e = st.text_input("Notas", value=str(fila.get("Notas","")))
-                submit = st.form_submit_button("Guardar cambios", disabled=is_readonly)
+                caso_e = st.text_input(
+                    "Caso",
+                    value=fila["Caso"],
+                    key="hon_et_caso_edit"
+                )
+                etapa_e = st.selectbox(
+                    "Instancia / Etapa",
+                    ETAPAS_HONORARIOS,
+                    index=ETAPAS_HONORARIOS.index(fila["Etapa"]) if fila["Etapa"] in ETAPAS_HONORARIOS else 0,
+                    key="hon_et_etapa_edit"
+                )
+                monto_e = st.number_input(
+                    "Monto Pactado",
+                    min_value=0.0,
+                    value=_num(fila["Monto Pactado"]),
+                    step=50.0,
+                    key="hon_et_monto_edit"
+                )
+                notas_e = st.text_input(
+                    "Notas",
+                    value=str(fila.get("Notas","")),
+                    key="hon_et_notas_edit"
+                )
+                submit = st.form_submit_button(
+                    "Guardar cambios",
+                    disabled=is_readonly
+                )
 
             if submit:
                 idx = honorarios_etapas.index[honorarios_etapas["ID"] == sel][0]
@@ -1333,14 +1421,26 @@ if menu == "Honorarios":
                 st.rerun()
 
             st.warning("⚠️ Eliminar honorario por etapa")
-            confirm = st.text_input("Escribe ELIMINAR para confirmar", key="hon_et_del_confirm")
-            if st.button("🗑️ Borrar", disabled=is_readonly or confirm.strip().upper() != "ELIMINAR"):
+            confirm = st.text_input(
+                "Escribe ELIMINAR para confirmar",
+                key="hon_et_del_confirm"
+            )
+            if st.button(
+                "🗑️ Borrar",
+                disabled=is_readonly or confirm.strip().upper() != "ELIMINAR",
+                key="hon_et_del_btn"
+            ):
                 honorarios_etapas = honorarios_etapas[honorarios_etapas["ID"] != sel].copy()
                 save_df("honorarios_etapas", honorarios_etapas)
                 st.success("✅ Eliminado")
                 st.rerun()
 
-        st.download_button("⬇️ Descargar honorarios por etapa (CSV)", honorarios_etapas.to_csv(index=False).encode("utf-8"), "honorarios_etapas.csv")
+        st.download_button(
+            "⬇️ Descargar honorarios por etapa (CSV)",
+            honorarios_etapas.to_csv(index=False).encode("utf-8"),
+            "honorarios_etapas.csv",
+            key="hon_et_dl_csv"
+        )
 # ==========================================================
 # PAGOS HONORARIOS (por etapa + editar/borrar)
 # ==========================================================
