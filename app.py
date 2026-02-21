@@ -625,35 +625,51 @@ if menu == "Dashboard":
     df_res = resumen_financiero_df()
     df_estado = cuotas_status_all()
 
-    # =========================
-    # ✅ Recalcular CUOTA LITIS CALCULADA (SUMA REAL)
-    # =========================
-    try:
-        cuotas = load_df("cuotas")
-        if not cuotas.empty and "CasoID" in cuotas.columns and "Monto" in cuotas.columns:
-            cuotas["Monto"] = pd.to_numeric(cuotas["Monto"], errors="coerce").fillna(0)
+# =========================
+# ✅ Recalcular CUOTA LITIS CALCULADA (SUMA REAL, CLAVE CORRECTA)
+# =========================
+try:
+    cuotas = load_df("cuotas")
 
-            # Suma de todas las cuotas por caso
+    if not cuotas.empty and "Monto" in cuotas.columns:
+
+        cuotas["Monto"] = pd.to_numeric(cuotas["Monto"], errors="coerce").fillna(0)
+
+        # 🔑 Detectar clave correcta del caso
+        if "CasoID" in cuotas.columns:
+            clave_cuota = "CasoID"
+            clave_resumen = "CasoID"
+        elif "Caso" in cuotas.columns:
+            clave_cuota = "Caso"
+            clave_resumen = "Caso"
+        elif "Expediente" in cuotas.columns:
+            clave_cuota = "Expediente"
+            clave_resumen = "Expediente"
+        else:
+            clave_cuota = None
+
+        if clave_cuota and clave_resumen in df_res.columns:
             litis_por_caso = (
-                cuotas.groupby("CasoID", as_index=False)["Monto"]
+                cuotas.groupby(clave_cuota, as_index=False)["Monto"]
                 .sum()
                 .rename(columns={"Monto": "CuotaLitisTotal"})
             )
 
-            # Merge con resumen financiero
-            if "CasoID" in df_res.columns:
-                df_res = df_res.merge(
-                    litis_por_caso,
-                    on="CasoID",
-                    how="left"
-                )
-                df_res["CuotaLitisTotal"] = df_res["CuotaLitisTotal"].fillna(0)
-            else:
-                df_res["CuotaLitisTotal"] = 0
+            df_res = df_res.merge(
+                litis_por_caso,
+                left_on=clave_resumen,
+                right_on=clave_cuota,
+                how="left"
+            )
+
+            df_res["CuotaLitisTotal"] = df_res["CuotaLitisTotal"].fillna(0)
         else:
             df_res["CuotaLitisTotal"] = 0
-    except Exception:
+    else:
         df_res["CuotaLitisTotal"] = 0
+
+except Exception:
+    df_res["CuotaLitisTotal"] = 0
 
     # =========================
     # Normalización defensiva
