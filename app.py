@@ -298,33 +298,45 @@ def login_ui():
     brand_header()
     st.subheader("Ingreso al Sistema")
 
+    # ✅ Limpiar SOLO la primera vez que se muestra el login en esta sesión
+    if "login_cleared" not in st.session_state:
+        st.session_state["login_cleared"] = True
+        st.session_state["login_user"] = ""
+        st.session_state["login_pass"] = ""
+
     u = st.text_input(
-    "Usuario",
-    value="",
-    key="login_user",
-    placeholder="Escribe tu usuario",
-    autocomplete="off"
-)
-p = st.text_input(
-    "Contraseña",
-    value="",
-    key="login_pass",
-    type="password",
-    placeholder="Escribe tu contraseña",
-    autocomplete="new-password"
-)
+        "Acceso",
+        key="login_user",
+        placeholder="Escribe tu usuario",
+        autocomplete="off"
+    )
+    p = st.text_input(
+        "Clave de acceso",
+        key="login_pass",
+        type="password",
+        placeholder="Escribe tu contraseña",
+        autocomplete="off"
+    )
 
     if st.button("Ingresar"):
         users = load_df("usuarios")
         users = users[users["Activo"].astype(str) == "1"].copy()
         row = users[users["Usuario"].astype(str) == str(u)].copy()
+
         if row.empty or row.iloc[0]["PasswordHash"] != sha256(p):
             st.error("Credenciales incorrectas")
             st.stop()
 
         st.session_state.usuario = u
         st.session_state.rol = row.iloc[0]["Rol"]
-        st.session_state.abogado_id = str(row.iloc[0]["AbogadoID"]) if "AbogadoID" in row.columns else ""
+        st.session_state.abogado_id = (
+            str(row.iloc[0]["AbogadoID"])
+            if "AbogadoID" in row.columns else ""
+        )
+
+        # ✅ permitir que se limpie nuevamente cuando vuelvas al login
+        st.session_state.pop("login_cleared", None)
+        st.session_state["login_pass"] = ""
         st.rerun()
 
 if st.session_state.usuario is None:
@@ -1485,8 +1497,22 @@ if menu == "Usuarios":
             st.warning("Primero registra abogados para vincular usuarios.")
         else:
             with st.form("new_user_form"):
-                u = st.text_input("Usuario")
-                p = st.text_input("Contraseña", type="password")
+                u = st.text_input(
+    "Acceso",
+    value="",
+    key="login_user",
+    placeholder="Escribe tu usuario",
+    autocomplete="off"
+)
+p = st.text_input(
+    "Clave de acceso",
+    value="",
+    key="login_pass",
+    type="password",
+    placeholder="Escribe tu contraseña",
+    autocomplete="off"
+)
+
                 rol = st.selectbox("Rol", ["admin","abogado","asistente"])
                 abogado_id = st.selectbox(
                     "Abogado asociado",
