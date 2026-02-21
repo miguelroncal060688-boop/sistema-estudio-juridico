@@ -275,7 +275,7 @@ for k in FILES:
 usuarios = load_df("usuarios")
 if usuarios[usuarios["Usuario"].astype(str) == "admin"].empty:
     usuarios = add_row(usuarios, {
-        ""Usuario": "admin",
+        "Usuario": "admin",
 "PasswordHash": sha256(ADMIN_BOOTSTRAP_PASSWORD),
 "Rol": "admin",
 "AbogadoID": "",
