@@ -818,10 +818,27 @@ if menu == "Abogados":
             dom = st.text_input("Domicilio Procesal", value=str(fila["Domicilio Procesal"]))
             cas_e = st.text_input("Casilla Electrónica", value=str(fila["Casilla Electronica"]))
             cas_j = st.text_input("Casilla Judicial", value=str(fila["Casilla Judicial"]))
+            colegio_prof = st.text_input("Colegio Profesional", value=str(fila.get("ColegioProfesional","")))
+            distrito_jud = st.text_input("Distrito Judicial", value=str(fila.get("DistritoJudicial","")))
+            referencia = st.text_input("Referencia del Domicilio Procesal", value=str(fila.get("ReferenciaDomicilio","")))
+            notas = st.text_area("Notas del abogado", value=str(fila.get("Notas","")), height=120)
             submit = st.form_submit_button("Guardar cambios")
             if submit:
                 idx = abogados.index[abogados["ID"] == sel][0]
-                abogados.loc[idx, :] = [sel, nombre, dni, celular, correo, coleg, dom, cas_e, cas_j]
+                
+                abogados.loc[idx, "Nombre"] = nombre
+                abogados.loc[idx, "DNI"] = dni
+                abogados.loc[idx, "Celular"] = celular
+                abogados.loc[idx, "Correo"] = correo
+                abogados.loc[idx, "Colegiatura"] = coleg
+                abogados.loc[idx, "Domicilio Procesal"] = dom
+                abogados.loc[idx, "Casilla Electronica"] = cas_e
+                abogados.loc[idx, "Casilla Judicial"] = cas_j
+                
+                abogados.loc[idx, "ColegioProfesional"] = colegio_prof
+                abogados.loc[idx, "DistritoJudicial"] = distrito_jud
+                abogados.loc[idx, "ReferenciaDomicilio"] = referencia
+                abogados.loc[idx, "Notas"] = notas
                 save_df("abogados", abogados)
                 st.success("✅ Actualizado")
                 st.rerun()
