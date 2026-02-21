@@ -17,7 +17,10 @@ APP_VERSION = "MARCA 004"
 # CONFIGURACIÓN GENERAL
 # ==========================================================
 APP_NAME = "Estudio Jurídico Roncal Liñan y Asociados"
-CONTROL_PASSWORD = "control123"  # clave panel de control
+# ✅ Leer credenciales desde Secrets (Streamlit Cloud)
+CONTROL_PASSWORD = st.secrets.get("CONTROL_PASSWORD", "control123")  # panel de control (fallback local)
+ADMIN_BOOTSTRAP_PASSWORD = st.secrets.get("ADMIN_BOOTSTRAP_PASSWORD", "estudio123")  # admin inicial (fallback)
+PASSWORD_PEPPER = st.secrets.get("PASSWORD_PEPPER", "")  # opcional (mejora hash)
 
 DATA_DIR = "."
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
@@ -91,8 +94,12 @@ TIPOS_CUOTA = ["Honorarios", "CuotaLitis"]
 # ==========================================================
 # UTILIDADES
 # ==========================================================
+# ✅ Esta variable debe existir (la definiremos en el cambio B)
+# PASSWORD_PEPPER = st.secrets.get("PASSWORD_PEPPER", "")
+
 def sha256(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    base = (PASSWORD_PEPPER or "") + str(text)
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 def normalize_key(x) -> str:
     if pd.isna(x):
@@ -269,7 +276,7 @@ usuarios = load_df("usuarios")
 if usuarios[usuarios["Usuario"].astype(str) == "admin"].empty:
     usuarios = add_row(usuarios, {
         "Usuario": "admin",
-        "PasswordHash": sha256("estudio123"),
+        "PasswordHash": sha256(ADMIN_BOOTSTRAP_PASSWORD),
         "Rol": "admin",
         "AbogadoID": "",
         "Activo": "1",
@@ -291,8 +298,21 @@ def login_ui():
     brand_header()
     st.subheader("Ingreso al Sistema")
 
-    u = st.text_input("Usuario", value="admin")
-    p = st.text_input("Contraseña", type="password", value="estudio123")
+    u = st.text_input(
+    "Usuario",
+    value="",
+    key="login_user",
+    placeholder="Escribe tu usuario",
+    autocomplete="off"
+)
+p = st.text_input(
+    "Contraseña",
+    value="",
+    key="login_pass",
+    type="password",
+    placeholder="Escribe tu contraseña",
+    autocomplete="new-password"
+)
 
     if st.button("Ingresar"):
         users = load_df("usuarios")
@@ -503,7 +523,7 @@ def reset_total(borrar_archivos=False):
     users = pd.DataFrame(columns=SCHEMAS["usuarios"])
     users = pd.concat([users, pd.DataFrame([{
         "Usuario":"admin",
-        "PasswordHash": sha256("estudio123"),
+        "PasswordHash": sha256(ADMIN_BOOTSTRAP_PASSWORD)
         "Rol":"admin",
         "AbogadoID":"",
         "Activo":"1",
@@ -544,7 +564,7 @@ with st.sidebar.expander("🔒 Panel de control", expanded=False):
         wipe = st.checkbox("Borrar también uploads/ y generados/ (solo reset total)", value=False)
         if st.button("🧨 Reset total (borra todo)"):
             reset_total(borrar_archivos=wipe)
-            st.success("✅ Reset total aplicado. admin/estudio123")
+            st.success("✅ Reset total aplicado. Usuario: admin. Contraseña: la configurada en Secrets.")
             st.rerun()
     else:
         st.info("Panel protegido. (Pide la clave)")
