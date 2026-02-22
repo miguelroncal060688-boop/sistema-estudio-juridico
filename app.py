@@ -2933,7 +2933,7 @@ if menu == "Usuarios":
     }
 
     # =========================
-    # CARGAR PERMISOS (CSV) - SIEMPRE
+    # CARGAR PERMISOS (CSV)
     # =========================
     permisos = load_df("permisos")
 
@@ -2952,7 +2952,7 @@ if menu == "Usuarios":
         save_df("permisos", permisos)
 
     # =========================
-    # FUNCIÓN DE PERMISO (LOCAL)
+    # FUNCIÓN DE PERMISO (LOCAL) + EXPORT A GLOBAL
     # =========================
     def has_perm(accion: str) -> bool:
         rol = st.session_state.get("rol", "")
@@ -2969,11 +2969,11 @@ if menu == "Usuarios":
             return False
         return bool(int(fila.iloc[0].get(col, 0)))
 
-    # ✅ FIX SIMPLE: hacer visible has_perm en toda la app (evita NameError en otros menús)
+    # ✅ para que otros módulos no fallen con NameError
     globals()["has_perm"] = has_perm
 
     # =========================
-    # PANEL DE PERMISOS (ADMIN)
+    # PANEL DE PERMISOS (SOLO ADMIN)
     # =========================
     if st.session_state.get("rol") == "Admin":
         with st.expander("⚙️ Configuración de permisos por rol", expanded=False):
@@ -2995,6 +2995,8 @@ if menu == "Usuarios":
                 save_df("permisos", permisos)
                 st.success("✅ Permisos actualizados")
                 st.rerun()
+    else:
+        st.info("Solo Admin puede editar la matriz de permisos. Puedes ver usuarios, pero no cambiar permisos.")
 
     # =========================
     # GESTIÓN DE USUARIOS
@@ -3011,38 +3013,55 @@ if menu == "Usuarios":
             submit = st.form_submit_button("Crear usuario")
 
             if submit:
-                new_id = next_id(usuarios)
-                usuarios = add_row(usuarios, {
-                    "ID": new_id,
-                    "Usuario": usuario,
-                    "Rol": rol
-                }, "usuarios")
-                save_df("usuarios", usuarios)
-                st.success("✅ Usuario creado")
-                st.rerun()
+                # Validación simple: no duplicar usuario
+                if (usuarios["Usuario"].astype(str) == str(usuario)).any():
+                    st.error("Ese usuario ya existe.")
+                else:
+                    usuarios = add_row(usuarios, {
+                        "Usuario": str(usuario),
+                        "PasswordHash": "",      # si tu app usa hash, aquí se llenará por otro flujo
+                        "Rol": rol,
+                        "AbogadoID": "",
+                        "Activo": "1",
+                        "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }, "usuarios")
+                    save_df("usuarios", usuarios)
+                    st.success("✅ Usuario creado")
+                    st.rerun()
 
     # ---------- EDITAR ----------
     elif accion_u == "Editar":
         if usuarios.empty:
             st.info("No hay usuarios.")
         else:
-            sel = st.selectbox(
+            sel_user = st.selectbox(
                 "Selecciona usuario",
-                usuarios["ID"].tolist(),
-                format_func=lambda x: f"{usuarios[usuarios['ID']==x].iloc[0]['Usuario']}",
+                usuarios["Usuario"].astype(str).tolist(),
                 key="usr_edit_sel"
             )
 
-            fila = usuarios[usuarios["ID"] == sel].iloc[0]
+            fila = usuarios[usuarios["Usuario"].astype(str) == str(sel_user)].iloc[0]
 
             with st.form("usr_edit"):
-                usuario = st.text_input("Usuario", value=fila["Usuario"], key="usr_edit_user")
-                rol = st.selectbox("Rol", ROLES_DISPONIBLES, index=ROLES_DISPONIBLES.index(fila["Rol"]), key="usr_edit_role")
+                usuario_new = st.text_input("Usuario", value=str(fila["Usuario"]), key="usr_edit_user")
+                rol_new = st.selectbox(
+                    "Rol",
+                    ROLES_DISPONIBLES,
+                    index=ROLES_DISPONIBLES.index(str(fila["Rol"])) if str(fila["Rol"]) in ROLES_DISPONIBLES else 0,
+                    key="usr_edit_role"
+                )
+                activo_new = st.selectbox(
+                    "Activo",
+                    ["1","0"],
+                    index=0 if str(fila.get("Activo","1")) == "1" else 1,
+                    key="usr_edit_activo"
+                )
+
                 submit = st.form_submit_button("Guardar cambios")
 
                 if submit:
-                    idx = usuarios.index[usuarios["ID"] == sel][0]
-                    usuarios.loc[idx, ["Usuario","Rol"]] = [usuario, rol]
+                    idx = usuarios.index[usuarios["Usuario"].astype(str) == str(sel_user)][0]
+                    usuarios.loc[idx, ["Usuario","Rol","Activo"]] = [str(usuario_new), rol_new, str(activo_new)]
                     save_df("usuarios", usuarios)
                     st.success("✅ Usuario actualizado")
                     st.rerun()
@@ -3052,17 +3071,17 @@ if menu == "Usuarios":
         if usuarios.empty:
             st.info("No hay usuarios.")
         else:
-            sel = st.selectbox(
+            sel_user = st.selectbox(
                 "Selecciona usuario a eliminar",
-                usuarios["ID"].tolist(),
-                format_func=lambda x: f"{usuarios[usuarios['ID']==x].iloc[0]['Usuario']}",
+                usuarios["Usuario"].astype(str).tolist(),
                 key="usr_del_sel"
             )
 
             st.warning("⚠️ Esta acción no se puede deshacer")
+            confirm = st.text_input("Escribe ELIMINAR para confirmar", key="usr_del_confirm")
 
-            if st.button("🗑️ Eliminar usuario", key="usr_del_btn"):
-                usuarios = usuarios[usuarios["ID"] != sel].copy()
+            if st.button("🗑️ Eliminar usuario", key="usr_del_btn", disabled=confirm.strip().upper() != "ELIMINAR"):
+                usuarios = usuarios[usuarios["Usuario"].astype(str) != str(sel_user)].copy()
                 save_df("usuarios", usuarios)
                 st.success("✅ Usuario eliminado")
                 st.rerun()
