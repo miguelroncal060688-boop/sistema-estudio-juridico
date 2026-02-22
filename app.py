@@ -3298,10 +3298,12 @@ if menu == "Instancias":
         exp = st.selectbox("Expediente", casos["Expediente"].tolist(), key="inst_exp")
         exp_n = normalize_key(exp)
 
-        df_i = instancias.copy()
-        df_i["Caso"] = df_i["Caso"].apply(normalize_key)
+        # ✅ Cargar desde CSV (como en tu arquitectura real)
+        df_i = load_df("instancias")
+        if not df_i.empty and "Caso" in df_i.columns:
+            df_i["Caso"] = df_i["Caso"].apply(normalize_key)
 
-        sub = df_i[df_i["Caso"] == exp_n].copy()
+        sub = df_i[df_i["Caso"] == exp_n].copy() if not df_i.empty else pd.DataFrame()
 
         # =========================
         # LISTADO
@@ -3355,8 +3357,8 @@ if menu == "Instancias":
             submit = st.form_submit_button("Guardar instancia")
 
             if submit:
-                new_id = next_id(instancias)
-                instancias = add_row(instancias, {
+                new_id = next_id(df_i)
+                df_i = add_row(df_i, {
                     "ID": new_id,
                     "Caso": exp_n,
                     "TipoInstancia": tipo,
@@ -3368,7 +3370,7 @@ if menu == "Instancias":
                     "CosaDecidida": cosa_decidida,
                     "FechaCosaDecidida": fecha_cosa
                 }, "instancias")
-                save_df("instancias", instancias)
+                save_df("instancias", df_i)
                 st.success("✅ Instancia registrada")
                 st.rerun()
 
@@ -3399,30 +3401,27 @@ if menu == "Instancias":
                         "Segunda Instancia",
                         "Casación",
                         "Otros"
-                    ].index(fila.get("TipoInstancia","Otros"))
+                    ].index(fila.get("TipoInstancia", "Otros"))
                 )
 
-                estado_e = st.text_input("Estado actual", value=str(fila.get("EstadoActual","")))
-                resultado_e = st.text_input("Resultado", value=str(fila.get("Resultado","")))
-                accion_e = st.text_input("Acción", value=str(fila.get("Accion","")))
+                estado_e = st.text_input("Estado actual", value=str(fila.get("EstadoActual", "")))
+                resultado_e = st.text_input("Resultado", value=str(fila.get("Resultado", "")))
+                accion_e = st.text_input("Acción", value=str(fila.get("Accion", "")))
                 honor_e = st.number_input(
                     "Honorarios (S/)",
                     min_value=0.0,
-                    value=float(pd.to_numeric(fila.get("Honorarios",0), errors="coerce") or 0.0),
+                    value=float(pd.to_numeric(fila.get("Honorarios", 0), errors="coerce") or 0.0),
                     step=100.0
                 )
 
-                sede_admin_e = fila.get("SedeAdministrativa","")
-                cosa_decidida_e = fila.get("CosaDecidida","0") == "1"
-                fecha_cosa_e = fila.get("FechaCosaDecidida","")
+                sede_admin_e = fila.get("SedeAdministrativa", "")
+                cosa_decidida_e = fila.get("CosaDecidida", "0") == "1"
+                fecha_cosa_e = fila.get("FechaCosaDecidida", "")
 
                 if tipo_e == "Instancia Administrativa":
                     st.markdown("**Datos de instancia administrativa**")
                     sede_admin_e = st.text_input("Sede Administrativa", value=str(sede_admin_e))
-                    cosa_decidida_e = st.checkbox(
-                        "¿Cosa Decidida?",
-                        value=cosa_decidida_e
-                    )
+                    cosa_decidida_e = st.checkbox("¿Cosa Decidida?", value=cosa_decidida_e)
                     if cosa_decidida_e:
                         fecha_cosa_e = st.text_input(
                             "Fecha de cosa decidida (YYYY-MM-DD)",
@@ -3434,29 +3433,28 @@ if menu == "Instancias":
                 submit_edit = st.form_submit_button("Guardar cambios")
 
                 if submit_edit:
-                    idx = instancias.index[instancias["ID"] == sel_id][0]
-                    instancias.loc[idx, [
-                        "TipoInstancia","EstadoActual","Resultado","Accion",
-                        "Honorarios","SedeAdministrativa",
-                        "CosaDecidida","FechaCosaDecidida"
+                    idx = df_i.index[df_i["ID"] == sel_id][0]
+                    df_i.loc[idx, [
+                        "TipoInstancia", "EstadoActual", "Resultado", "Accion",
+                        "Honorarios", "SedeAdministrativa",
+                        "CosaDecidida", "FechaCosaDecidida"
                     ]] = [
                         tipo_e, estado_e, resultado_e, accion_e,
                         float(honor_e), sede_admin_e,
                         "1" if cosa_decidida_e else "0",
                         fecha_cosa_e
                     ]
-                    save_df("instancias", instancias)
+                    save_df("instancias", df_i)
                     st.success("✅ Instancia actualizada")
                     st.rerun()
 
             st.warning("⚠️ Eliminar instancia (irreversible)")
             confirm = st.text_input("Escribe ELIMINAR para confirmar", key="inst_del_confirm")
-            if st.button("🗑️ Eliminar instancia", disabled=confirm.strip().upper()!="ELIMINAR"):
-                instancias = instancias[instancias["ID"] != sel_id].copy()
-                save_df("instancias", instancias)
+            if st.button("🗑️ Eliminar instancia", disabled=confirm.strip().upper() != "ELIMINAR"):
+                df_i = df_i[df_i["ID"] != sel_id].copy()
+                save_df("instancias", df_i)
                 st.success("✅ Instancia eliminada")
                 st.rerun()
-
 # ==========================================================
 # MARCA 006 – CLIENTES (Extendido): Natural/Jurídico + Emergencia
 # ==========================================================
