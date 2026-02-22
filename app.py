@@ -3657,6 +3657,7 @@ def _repo_scan_generados():
         if '_BORRADOR_' in fn:
             nombre = fn.split('_BORRADOR_')[0].replace('_',' ')
             expediente = fn.split('_BORRADOR_')[-1].split('.')[0].replace('__','_')
+
         cliente, abogado = '', ''
         try:
             if 'casos' in globals() and not casos.empty and expediente:
@@ -3665,10 +3666,12 @@ def _repo_scan_generados():
                 abogado = str(r.get('Abogado',''))
         except Exception:
             pass
+
         try:
             fc = datetime.fromtimestamp(os.path.getmtime(path)).strftime('%Y-%m-%d %H:%M:%S')
         except Exception:
             fc = ''
+
         out.append({
             'Archivo': fn,'Ruta': path,'Extension': ext,
             'Expediente': expediente,'Cliente': cliente,'Abogado': abogado,
@@ -3681,6 +3684,7 @@ def _repo_sync_contratos():
     repo = _repo_contratos_load()
     scanned = _repo_scan_generados()
     scanned_by = {r['Archivo']: r for r in scanned}
+
     if not repo.empty:
         repo['Existe'] = '0'
         for i in repo.index:
@@ -3689,9 +3693,15 @@ def _repo_sync_contratos():
                 repo.at[i,'Existe'] = '1'
                 for k in ['Ruta','Extension','Hash','FechaCreado','Cliente','Abogado','Expediente','NombreContrato']:
                     repo.at[i,k] = scanned_by[fn].get(k, repo.at[i,k])
+
     existing = set(repo['Archivo'].astype(str).tolist()) if not repo.empty else set()
-    ids = pd.to_numeric(repo.get('ID', pd.Series(dtype='float')), errors='coerce').fillna(0).astype(int)
-    nid = int(ids.max()) + 1
+
+    # ✅ FIX ROBUSTO: evita ValueError cuando max es NaN
+    ids = pd.to_numeric(repo.get('ID', pd.Series(dtype='float')), errors='coerce')
+    max_id = ids.dropna().max()
+    max_id = 0 if pd.isna(max_id) else int(max_id)
+    nid = max_id + 1
+
     new_rows = []
     for r in scanned:
         if r['Archivo'] not in existing:
@@ -3704,8 +3714,10 @@ def _repo_sync_contratos():
                 'Existe': '1','Visible': '1'
             })
             nid += 1
+
     if new_rows:
         repo = pd.concat([repo, pd.DataFrame(new_rows)], ignore_index=True)
+
     for c in REPO_CONTRATOS_SCHEMA:
         if c not in repo.columns:
             repo[c] = ''
@@ -3719,7 +3731,9 @@ def _repo_sync_contratos():
 if 'menu' in globals() and menu == 'Repositorio Contratos':
     st.subheader('📦 Repositorio de Contratos')
 
-    # ====== Barra superior: Sincronizar / Exportar / Reset total (sin borrar tus botones) ======
+    is_admin = st.session_state.get('rol') == 'admin'
+
+    # ====== Barra superior: Sincronizar / Exportar / Reset total ======
     col1, col2, col3 = st.columns([1, 1, 1])
 
     with col1:
@@ -3737,8 +3751,8 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
         )
 
     with col3:
-        # ✅ Reset SOLO para ADMIN (abogado y asistente NO lo ven)
-        if st.session_state.get('rol') == 'admin':
+        # ✅ Reset SOLO para ADMIN
+        if is_admin:
             with st.expander("⚠️ Reset total del repositorio", expanded=False):
                 st.warning("Esto borra: 1) repo_contratos.csv y 2) TODOS los archivos dentro de generados/.")
                 confirm = st.checkbox("Entiendo el riesgo y deseo borrar todo", key="rc_reset_confirm")
@@ -3765,9 +3779,9 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                     except Exception as e:
                         st.error(f"Error al resetear: {e}")
         else:
-            # evita bloque vacío y errores de indentación
             st.write("")
-    # ====== Cuerpo del repositorio (TU UI ORIGINAL, intacto) ======
+
+    # ====== Cuerpo del repositorio ======
     repo = _repo_contratos_load()
     if repo.empty:
         st.info('No hay contratos aún. Guarda un borrador y sincroniza.')
@@ -3821,17 +3835,17 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
             notas = st.text_area('Notas', value=str(row.get('Notas','')), height=90, key='rc_notas')
             sigla = st.text_input('Sigla', value=str(row.get('Sigla','CLS')), key='rc_sigla')
 
-            # Guardar notas
+            # Guardar notas (permitido a admin/abogado; aquí solo admin por seguridad)
             idx = _repo_get_idx(repo, sel_id)
-            if idx is not None:
+            if idx is not None and is_admin:
                 repo.at[idx, 'Notas'] = notas
                 _repo_contratos_save(repo)
 
-            # ====== TUS BOTONES ORIGINALES (NO BORRADOS) ======
+            # ====== Botones (solo ADMIN) ======
             b1, b2, b3 = st.columns(3)
 
             with b1:
-                if st.button('✅ Marcar FIRMADO (asigna N°)', key='rc_firmar_btn'):
+                if st.button('✅ Marcar FIRMADO (asigna N°)', key='rc_firmar_btn', disabled=not is_admin):
                     repo2 = _repo_contratos_load()
                     idx2 = _repo_get_idx(repo2, sel_id)
                     if idx2 is not None:
@@ -3841,7 +3855,7 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                     st.rerun()
 
             with b2:
-                if st.button('📝 Marcar BORRADOR', key='rc_borr_btn'):
+                if st.button('📝 Marcar BORRADOR', key='rc_borr_btn', disabled=not is_admin):
                     repo2 = _repo_contratos_load()
                     idx2 = _repo_get_idx(repo2, sel_id)
                     if idx2 is not None:
@@ -3852,13 +3866,13 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
 
             with b3:
                 if str(row.get('Visible','1')) == '1':
-                    if st.button('🗑️ Quitar del repositorio', key='rc_quitar_btn'):
+                    if st.button('🗑️ Quitar del repositorio', key='rc_quitar_btn', disabled=not is_admin):
                         repo2 = _repo_contratos_load()
                         repo2 = _repo_quitar(repo2, sel_id)
                         st.success('✅ Quitado (no revive)')
                         st.rerun()
                 else:
-                    if st.button('♻️ Restaurar', key='rc_rest_btn'):
+                    if st.button('♻️ Restaurar', key='rc_rest_btn', disabled=not is_admin):
                         repo2 = _repo_contratos_load()
                         repo2 = _repo_restaurar(repo2, sel_id)
                         st.success('✅ Restaurado')
@@ -3871,6 +3885,27 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                 mime = 'text/plain' if ext == '.txt' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 with open(ruta, 'rb') as f:
                     data = f.read()
-                st.download_button('⬇️ Descargar archivo', data=data, file_name=os.path.basename(ruta), mime=mime, key=f'rc_dl_{sel_id}')
+
+                st.download_button(
+                    '⬇️ Descargar archivo',
+                    data=data,
+                    file_name=os.path.basename(ruta),
+                    mime=mime,
+                    key=f'rc_dl_{sel_id}'
+                )
+
+                # ✅ Si el seleccionado es .txt, ofrecer también el .docx paralelo si existe
+                if ext == '.txt':
+                    docx_path = ruta[:-4] + '.docx'
+                    if os.path.exists(docx_path):
+                        with open(docx_path, 'rb') as f:
+                            d2 = f.read()
+                        st.download_button(
+                            '⬇️ Descargar Word (.docx)',
+                            data=d2,
+                            file_name=os.path.basename(docx_path),
+                            mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                            key=f'rc_dl_docx_{sel_id}'
+                        )
             else:
                 st.warning('Archivo no encontrado en generados/.')
