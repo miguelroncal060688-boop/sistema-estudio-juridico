@@ -2428,72 +2428,192 @@ if menu == "Documentos":
     st.download_button("⬇️ Descargar documentos (CSV)", documentos.to_csv(index=False).encode("utf-8"), "documentos.csv")
 
 # ==========================================================
-# PLANTILLAS DE CONTRATO
+# PLANTILLAS DE CONTRATO (MEJORADO: CÓDIGOS + INSERTAR + VALIDAR + PREVIEW)
 # ==========================================================
 if menu == "Plantillas de Contrato":
     st.subheader("📝 Plantillas de Contrato (Modelos)")
-    accion = st.radio("Acción", ["Nueva","Editar","Eliminar"], horizontal=True)
+    accion = st.radio("Acción", ["Nueva","Editar","Eliminar"], horizontal=True, key="tpl_accion")
 
-    
-    st.info(
-       
-        "📌 **CÓDIGOS DISPONIBLES PARA CONTRATOS**\n\n"
-    
-        "🔹 **BÁSICOS**\n"
-        "  {{EXPEDIENTE}}\n"
-        "  {{FECHA_HOY}}\n\n"
-    
-        "🔹 **CASO (datos del expediente)**\n"
-        "  {{CASO_EXPEDIENTE}}\n"
-        "  {{CASO_CLIENTE}}\n"
-        "  {{CASO_ABOGADO}}\n"
-        "  {{CASO_MATERIA}}\n"
-        "  {{CASO_INSTANCIA}}\n"
-        "  {{CASO_PRETENSION}}\n\n"
-    
-        "🔹 **CLIENTE (persona natural / jurídica)**\n"
-        "  {{CLIENTE_NOMBRE}}\n"
-        "  {{CLIENTE_DNI}}\n"
-        "  {{CLIENTE_CELULAR}}\n"
-        "  {{CLIENTE_CORREO}}\n"
-        "  {{CLIENTE_DIRECCION}}\n\n"
-    
-        "🔹 **ABOGADO**\n"
-        "  {{ABOGADO_NOMBRE}}\n"
-        "  {{ABOGADO_DNI}}\n"
-        "  {{ABOGADO_CELULAR}}\n"
-        "  {{ABOGADO_CORREO}}\n"
-        "  {{ABOGADO_COLEGIATURA}}\n"
-        "  {{ABOGADO_DOMICILIO PROCESAL}}\n"
-        "  {{ABOGADO_CASILLA ELECTRONICA}}\n"
-        "  {{ABOGADO_CASILLA JUDICIAL}}\n\n"
-    
-        "🔹 **ECONÓMICOS – HONORARIOS**\n"
-        "  {{MONTO_PACTADO}}               → Total de honorarios del caso\n"
-        "  {{HONORARIO_PRIMERA_INSTANCIA}} → Honorario por Primera Instancia\n"
-        "  {{HONORARIO_SEGUNDA_INSTANCIA}} → Honorario por Segunda Instancia\n"
-        "  {{HONORARIO_CASACION}}          → Honorario por Casación\n"
-        "  {{HONORARIO_OTROS}}             → Otros honorarios\n\n"
-    
-        "🔹 **ECONÓMICOS – CUOTA LITIS**\n"
-        "  {{CUOTA_LITIS_BASE}}            → Monto base de la cuota litis\n"
-        "  {{CUOTA_LITIS_PORCENTAJE}}      → Porcentaje pactado\n\n"
-    
-        "🔹 **ECONÓMICOS – CRONOGRAMA DE PAGOS**\n"
-        "  {{CRONOGRAMA_PAGOS}}            → Detalle completo de cuotas\n"
-)
+    # -------------------------
+    # Construcción dinámica de códigos disponibles (TODAS las columnas)
+    # -------------------------
+    def _tok(prefix: str, col: str) -> str:
+        # Mantener exactamente el formato que usa build_context: {{PREFIX_<COLNAME_UPPER>}}
+        return "{{" + f"{prefix}_{str(col).upper()}" + "}}"
 
+    # Códigos básicos y económicos (manuales)
+    base_tokens = {
+        "{{EXPEDIENTE}}": "Número de expediente del caso seleccionado",
+        "{{FECHA_HOY}}": "Fecha actual (fecha de generación del contrato)"
+    }
 
-    # =========================
+    econ_tokens = {
+        "{{MONTO_PACTADO}}": "Total de honorarios pactados del caso",
+        "{{HONORARIO_PRIMERA_INSTANCIA}}": "Honorarios pactados por Primera Instancia",
+        "{{HONORARIO_SEGUNDA_INSTANCIA}}": "Honorarios pactados por Segunda Instancia",
+        "{{HONORARIO_CASACION}}": "Honorarios pactados por Casación",
+        "{{HONORARIO_OTROS}}": "Otros honorarios pactados",
+        "{{CUOTA_LITIS_BASE}}": "Monto base de cuota litis",
+        "{{CUOTA_LITIS_PORCENTAJE}}": "Porcentaje pactado de cuota litis",
+        "{{CRONOGRAMA_PAGOS}}": "Bloque/tabla con el cronograma completo de cuotas"
+    }
+
+    # Tokens dinámicos por columnas (caso/cliente/abogado)
+    caso_cols = list(casos.columns) if 'casos' in globals() and casos is not None and not casos.empty else (list(casos.columns) if 'casos' in globals() else [])
+    cliente_cols = list(clientes.columns) if 'clientes' in globals() and clientes is not None and not clientes.empty else (list(clientes.columns) if 'clientes' in globals() else [])
+    abogado_cols = list(abogados.columns) if 'abogados' in globals() and abogados is not None and not abogados.empty else (list(abogados.columns) if 'abogados' in globals() else [])
+
+    # Descripciones “bonitas” para algunos campos clave (opcional)
+    pretty = {
+        # Caso / Contraparte / Judicial
+        "CONTRAPARTE": "Contraparte (nombre)",
+        "CONTRAPARTEDOC": "Documento de la contraparte (DNI/RUC)",
+        "JUZGADO": "Juzgado",
+        "DISTRITOJUDICIAL": "Distrito Judicial",
+        "MATERIA": "Materia",
+        "INSTANCIA": "Instancia",
+        "PRETENSION": "Pretensión",
+        "ESTADOCASO": "Estado del caso",
+        "FECHAINICIO": "Fecha de inicio del caso",
+        # Cliente
+        "TIPOCLIENTE": "Tipo de cliente (Natural/Jurídica)",
+        "RAZONSOCIAL": "Razón social (persona jurídica)",
+        "RUC": "RUC (persona jurídica)",
+        "REPRESENTANTELEGAL": "Representante legal",
+        "DNI": "DNI",
+        "DIRECCION": "Dirección",
+        "CORREO": "Correo",
+        "CELULAR": "Celular",
+        # Abogado
+        "COLEGIATURA": "Colegiatura",
+        "DOMICILIO PROCESAL": "Domicilio procesal",
+        "CASILLA ELECTRONICA": "Casilla electrónica",
+        "CASILLA JUDICIAL": "Casilla judicial",
+    }
+
+    def _desc_dynamic(prefix: str, col: str) -> str:
+        key = str(col).upper()
+        if key in pretty:
+            return f"{prefix}: {pretty[key]}"
+        return f"{prefix}: Campo '{col}'"
+
+    # Armar catálogo completo
+    catalog = []
+
+    # BÁSICOS
+    for k, v in base_tokens.items():
+        catalog.append(("BÁSICOS", k, v))
+
+    # CASO (todas las columnas)
+    for col in caso_cols:
+        catalog.append(("CASO (todas las columnas)", _tok("CASO", col), _desc_dynamic("CASO", col)))
+
+    # CLIENTE (todas las columnas)
+    for col in cliente_cols:
+        catalog.append(("CLIENTE (todas las columnas)", _tok("CLIENTE", col), _desc_dynamic("CLIENTE", col)))
+
+    # ABOGADO (todas las columnas)
+    for col in abogado_cols:
+        catalog.append(("ABOGADO (todas las columnas)", _tok("ABOGADO", col), _desc_dynamic("ABOGADO", col)))
+
+    # ECONÓMICOS
+    for k, v in econ_tokens.items():
+        catalog.append(("ECONÓMICOS", k, v))
+
+    # Lista de tokens válidos (para validador)
+    allowed_tokens = set([t for _, t, _ in catalog])
+
+    # -------------------------
+    # Utilidades: insertar token, validar, preview
+    # -------------------------
+    import re
+    token_pat = re.compile(r"{{[^{}]+}}")
+
+    def _unknown_tokens(text: str):
+        found = set(token_pat.findall(text or ""))
+        unknown = sorted([t for t in found if t not in allowed_tokens])
+        return unknown, sorted(found)
+
+    def _render_preview_if_possible(texto: str):
+        # usa build_context/render_template si existen
+        if 'build_context' in globals() and 'render_template' in globals():
+            if casos.empty:
+                st.info("No hay casos para previsualizar.")
+                return
+            exp_prev = st.selectbox("Expediente para previsualizar", casos["Expediente"].tolist(), key="tpl_prev_exp")
+            try:
+                ctx = build_context(exp_prev)
+                prev = render_template(texto or "", ctx)
+                st.text_area("Vista previa (con datos reales)", value=prev, height=260, key="tpl_prev_out")
+            except Exception as e:
+                st.warning(f"No se pudo previsualizar: {e}")
+        else:
+            st.info("Vista previa deshabilitada: no se encontró build_context/render_template en la app.")
+
+    # -------------------------
+    # Panel fijo de códigos (visible mientras creas/editar)
+    # -------------------------
+    with st.expander("📌 Códigos disponibles (clic para insertar)", expanded=True):
+        st.caption("Tip: Usa el buscador y presiona **Insertar** para añadir el código en tu contenido.")
+        qcode = st.text_input("Buscar código o descripción", value="", key="tpl_code_search").strip().lower()
+
+        # filtrar catálogo por búsqueda
+        filtered = []
+        for grp, tok, desc in catalog:
+            if not qcode or qcode in tok.lower() or qcode in desc.lower() or qcode in grp.lower():
+                filtered.append((grp, tok, desc))
+
+        # selector de token
+        options = [f"[{grp}] {tok} — {desc}" for grp, tok, desc in filtered]
+        if not options:
+            st.info("Sin resultados para ese filtro.")
+        else:
+            sel = st.selectbox("Selecciona un código", options, key="tpl_code_pick")
+
+            # extraer el token real
+            tok_selected = sel.split("] ", 1)[1].split(" — ", 1)[0].strip()
+
+            st.code(tok_selected, language="text")
+
+            st.caption("Puedes copiarlo manualmente o usar Insertar.")
+            # Insertar se hará sobre una variable de sesión que usamos en el editor
+            # (se define más abajo dependiendo de Nueva/Editar)
+            st.session_state["tpl_tok_to_insert"] = tok_selected
+
+    # -------------------------
     # NUEVA
-    # =========================
+    # -------------------------
     if accion == "Nueva":
+        # Estado editable en session_state para poder “insertar”
+        if "tpl_new_contenido" not in st.session_state:
+            st.session_state["tpl_new_contenido"] = ""
+
+        # Insertar token si el usuario lo pidió
+        if st.button("➕ Insertar código en contenido (Nueva)", key="tpl_new_insert_btn"):
+            tok = st.session_state.get("tpl_tok_to_insert", "")
+            if tok:
+                st.session_state["tpl_new_contenido"] = (st.session_state["tpl_new_contenido"] or "") + "\n" + tok
+
         with st.form("tpl_new"):
-            nombre = st.text_input("Nombre")
-            contenido = st.text_area("Contenido", height=300)
-            notas = st.text_input("Notas", value="")
+            nombre = st.text_input("Nombre", key="tpl_new_nombre")
+            contenido = st.text_area("Contenido", height=300, key="tpl_new_contenido")
+            notas = st.text_input("Notas", value="", key="tpl_new_notas")
+
+            # Validador en vivo (dentro del form)
+            unknown, found = _unknown_tokens(contenido)
+            if unknown:
+                st.warning("⚠️ Códigos desconocidos detectados (no serán reemplazados):\n" + "\n".join(unknown))
+            else:
+                st.success("✅ Códigos válidos (o no se detectaron códigos).")
+
+            st.caption(f"Códigos detectados: {len(found)}")
+
+            # Vista previa (si existe soporte)
+            st.markdown("### 👁️ Vista previa")
+            _render_preview_if_possible(contenido)
+
             submit = st.form_submit_button("Guardar plantilla")
-    
+
             if submit:
                 new_id = next_id(plantillas)
                 plantillas = add_row(plantillas, {
@@ -2505,11 +2625,13 @@ if menu == "Plantillas de Contrato":
                 }, "plantillas")
                 save_df("plantillas", plantillas)
                 st.success("✅ Plantilla creada")
+                # limpiar borrador
+                st.session_state["tpl_new_contenido"] = ""
                 st.rerun()
-    
-    # =========================
+
+    # -------------------------
     # EDITAR
-    # =========================
+    # -------------------------
     elif accion == "Editar":
         if plantillas.empty:
             st.info("No hay plantillas.")
@@ -2517,27 +2639,51 @@ if menu == "Plantillas de Contrato":
             sel = st.selectbox(
                 "Selecciona plantilla",
                 plantillas["ID"].tolist(),
-                format_func=lambda x: f"ID {x} – {plantillas[plantillas['ID']==x].iloc[0]['Nombre']}"
+                format_func=lambda x: f"ID {x} – {plantillas[plantillas['ID']==x].iloc[0]['Nombre']}",
+                key="tpl_edit_sel"
             )
-    
+
             fila = plantillas[plantillas["ID"] == sel].iloc[0]
-    
+
+            # Inicializar borrador editable al cambiar selección
+            key_state = f"tpl_edit_contenido_{sel}"
+            if key_state not in st.session_state:
+                st.session_state[key_state] = str(fila.get("Contenido",""))
+
+            # Insertar token en editor de Editar
+            if st.button("➕ Insertar código en contenido (Editar)", key="tpl_edit_insert_btn"):
+                tok = st.session_state.get("tpl_tok_to_insert", "")
+                if tok:
+                    st.session_state[key_state] = (st.session_state[key_state] or "") + "\n" + tok
+
             with st.form("tpl_edit"):
-                nombre = st.text_input("Nombre", value=str(fila["Nombre"]))
-                contenido = st.text_area("Contenido", value=str(fila["Contenido"]), height=300)
-                notas = st.text_input("Notas", value=str(fila["Notas"]))
+                nombre = st.text_input("Nombre", value=str(fila["Nombre"]), key=f"tpl_edit_nombre_{sel}")
+                contenido = st.text_area("Contenido", value=st.session_state[key_state], height=300, key=key_state)
+                notas = st.text_input("Notas", value=str(fila["Notas"]), key=f"tpl_edit_notas_{sel}")
+
+                unknown, found = _unknown_tokens(contenido)
+                if unknown:
+                    st.warning("⚠️ Códigos desconocidos detectados (no serán reemplazados):\n" + "\n".join(unknown))
+                else:
+                    st.success("✅ Códigos válidos (o no se detectaron códigos).")
+
+                st.caption(f"Códigos detectados: {len(found)}")
+
+                st.markdown("### 👁️ Vista previa")
+                _render_preview_if_possible(contenido)
+
                 submit = st.form_submit_button("Guardar cambios")
-    
+
                 if submit:
                     idx = plantillas.index[plantillas["ID"] == sel][0]
                     plantillas.loc[idx, ["Nombre","Contenido","Notas"]] = [nombre, contenido, notas]
                     save_df("plantillas", plantillas)
                     st.success("✅ Plantilla actualizada")
                     st.rerun()
-    
-    # =========================
+
+    # -------------------------
     # ELIMINAR
-    # =========================
+    # -------------------------
     elif accion == "Eliminar":
         if plantillas.empty:
             st.info("No hay plantillas.")
@@ -2545,12 +2691,14 @@ if menu == "Plantillas de Contrato":
             sel = st.selectbox(
                 "Selecciona plantilla a eliminar",
                 plantillas["ID"].tolist(),
-                format_func=lambda x: f"ID {x} – {plantillas[plantillas['ID']==x].iloc[0]['Nombre']}"
+                format_func=lambda x: f"ID {x} – {plantillas[plantillas['ID']==x].iloc[0]['Nombre']}",
+                key="tpl_del_sel"
             )
-    
+
             st.warning("⚠️ Esta acción no se puede deshacer")
-    
-            if st.button("🗑️ Eliminar plantilla"):
+            confirm = st.text_input("Escribe ELIMINAR para confirmar", key="tpl_del_confirm")
+
+            if st.button("🗑️ Eliminar plantilla", key="tpl_del_btn", disabled=confirm.strip().upper() != "ELIMINAR"):
                 plantillas = plantillas[plantillas["ID"] != sel].copy()
                 save_df("plantillas", plantillas)
                 st.success("✅ Plantilla eliminada")
@@ -2558,7 +2706,12 @@ if menu == "Plantillas de Contrato":
 
     st.divider()
     st.dataframe(plantillas, use_container_width=True)
-    st.download_button("⬇️ Descargar plantillas (CSV)", plantillas.to_csv(index=False).encode("utf-8"), "plantillas_contratos.csv")
+    st.download_button(
+        "⬇️ Descargar plantillas (CSV)",
+        plantillas.to_csv(index=False).encode("utf-8"),
+        "plantillas_contratos.csv",
+        key="tpl_dl_csv"
+    )
 
 # ==========================================================
 # GENERAR CONTRATO
