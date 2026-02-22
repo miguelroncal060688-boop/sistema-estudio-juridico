@@ -880,57 +880,180 @@ if menu == "Dashboard":
         "reporte_casos.csv"
     )
 # ==========================================================
-# FICHA DEL CASO (sin cambios)
+# FICHA DEL CASO (CON DESCARGA WORD)
 # ==========================================================
 if menu == "Ficha del Caso":
     st.subheader("📁 Ficha del Caso")
+
     if casos.empty:
         st.info("Primero registra casos.")
     else:
         exp = st.selectbox("Expediente", casos["Expediente"].tolist())
-        tabs = st.tabs(["Datos", "Pagos", "Cronograma", "Actuaciones", "Documentos", "Estado de Cuenta"])
+        exp_n = normalize_key(exp)
 
+        tabs = st.tabs([
+            "Datos", "Pagos", "Cronograma",
+            "Actuaciones", "Documentos", "Estado de Cuenta"
+        ])
+
+        # =========================
+        # DATOS
+        # =========================
         with tabs[0]:
-            st.dataframe(casos[casos["Expediente"] == exp], use_container_width=True)
+            df_caso = casos[casos["Expediente"] == exp]
+            st.dataframe(df_caso, use_container_width=True)
 
+        # =========================
+        # PAGOS
+        # =========================
         with tabs[1]:
             st.markdown("### Pagos Honorarios")
-            st.dataframe(pagos_honorarios[pagos_honorarios["Caso"] == exp], use_container_width=True)
-            st.markdown("### Pagos Cuota Litis")
-            st.dataframe(pagos_litis[pagos_litis["Caso"] == exp], use_container_width=True)
+            df_ph = pagos_honorarios[pagos_honorarios["Caso"] == exp_n]
+            st.dataframe(df_ph, use_container_width=True)
 
+            st.markdown("### Pagos Cuota Litis")
+            df_pl = pagos_litis[pagos_litis["Caso"] == exp_n]
+            st.dataframe(df_pl, use_container_width=True)
+
+        # =========================
+        # CRONOGRAMA
+        # =========================
         with tabs[2]:
             st.markdown("### Cuotas registradas")
-            st.dataframe(cuotas[cuotas["Caso"] == exp], use_container_width=True)
-            st.markdown("### Estado cuotas (si existe cronograma)")
+            st.dataframe(cuotas[cuotas["Caso"] == exp_n], use_container_width=True)
+
+            st.markdown("### Estado cuotas")
             estado_cuotas = cuotas_status_all()
-            if estado_cuotas is None or estado_cuotas.empty or "Caso" not in estado_cuotas.columns:
+            if estado_cuotas is None or estado_cuotas.empty:
                 st.info("No hay estado de cuotas disponible.")
             else:
-                st.dataframe(estado_cuotas[estado_cuotas["Caso"] == exp], use_container_width=True)
+                st.dataframe(
+                    estado_cuotas[estado_cuotas["Caso"] == exp_n],
+                    use_container_width=True
+                )
 
+        # =========================
+        # ACTUACIONES
+        # =========================
         with tabs[3]:
-            st.dataframe(actuaciones[actuaciones["Caso"] == exp].sort_values("Fecha", ascending=False), use_container_width=True)
+            df_act = actuaciones[actuaciones["Caso"] == exp_n].sort_values("Fecha", ascending=False)
+            st.dataframe(df_act, use_container_width=True)
 
+        # =========================
+        # DOCUMENTOS
+        # =========================
         with tabs[4]:
-            st.dataframe(documentos[documentos["Caso"] == exp].sort_values("Fecha", ascending=False), use_container_width=True)
+            df_doc = documentos[documentos["Caso"] == exp_n].sort_values("Fecha", ascending=False)
+            st.dataframe(df_doc, use_container_width=True)
 
+        # =========================
+        # ESTADO DE CUENTA + WORD
+        # =========================
         with tabs[5]:
-            df = resumen_financiero_df()
-            fila = df[df["Expediente"] == exp]
+            df_res = resumen_financiero_df()
+            fila = df_res[df_res["Expediente"] == exp_n]
+
             if fila.empty:
                 st.info("Sin estado de cuenta.")
+                r = None
             else:
-                f = fila.iloc[0]
+                r = fila.iloc[0]
+
                 a, b, c = st.columns(3)
-                a.metric("Honorario pactado", f"S/ {money(f['Honorario Pactado']):,.2f}")
-                b.metric("Pagado honorarios", f"S/ {money(f['Honorario Pagado']):,.2f}")
-                c.metric("Saldo honorarios", f"S/ {money(f['Honorario Pendiente']):,.2f}")
+                a.metric("Honorario pactado", f"S/ {r['Honorario Pactado']:,.2f}")
+                b.metric("Pagado honorarios", f"S/ {r['Honorario Pagado']:,.2f}")
+                c.metric("Saldo honorarios", f"S/ {r['Honorario Pendiente']:,.2f}")
 
                 d, e, g = st.columns(3)
-                d.metric("Cuota litis calc.", f"S/ {money(f['Cuota Litis Calculada']):,.2f}")
-                e.metric("Pagado litis", f"S/ {money(f['Pagado Litis']):,.2f}")
-                g.metric("Saldo litis", f"S/ {money(f['Saldo Litis']):,.2f}")
+                d.metric("Cuota litis calc.", f"S/ {r['Cuota Litis Calculada']:,.2f}")
+                e.metric("Pagado litis", f"S/ {r['Pagado Litis']:,.2f}")
+                g.metric("Saldo litis", f"S/ {r['Saldo Litis']:,.2f}")
+
+            # =========================
+            # GASTOS CLIENTE (INFORMATIVO)
+            # =========================
+            acts = actuaciones[actuaciones["Caso"] == exp_n].copy()
+            acts["CostasAranceles"] = pd.to_numeric(acts.get("CostasAranceles",0), errors="coerce").fillna(0.0)
+            acts["Gastos"] = pd.to_numeric(acts.get("Gastos",0), errors="coerce").fillna(0.0)
+            acts["Total"] = acts["CostasAranceles"] + acts["Gastos"]
+            acts["GastosPagado"] = acts.get("GastosPagado","0").astype(str)
+
+            pend = acts.loc[acts["GastosPagado"]!="1","Total"].sum()
+            pag = acts.loc[acts["GastosPagado"]=="1","Total"].sum()
+
+            g1, g2 = st.columns(2)
+            g1.metric("⏳ Gastos pendientes", f"S/ {pend:,.2f}")
+            g2.metric("✅ Gastos pagados", f"S/ {pag:,.2f}")
+
+            # =========================
+            # EXPORTAR A WORD
+            # =========================
+            from io import BytesIO
+            from docx import Document
+
+            colw1, colw2 = st.columns(2)
+
+            # ---- WORD: ESTADO DE CUENTA ----
+            with colw1:
+                if st.button("🧾 Descargar Estado de Cuenta (Word)"):
+                    doc = Document()
+                    doc.add_heading("ESTADO DE CUENTA DEL CASO", level=1)
+
+                    doc.add_paragraph(f"Expediente: {exp}")
+                    doc.add_paragraph(f"Cliente: {df_caso.iloc[0].get('Cliente','')}")
+                    doc.add_paragraph("")
+
+                    if r is not None:
+                        doc.add_heading("Resumen Financiero", level=2)
+                        doc.add_paragraph(f"Honorario pendiente: S/ {r['Honorario Pendiente']:,.2f}")
+                        doc.add_paragraph(f"Saldo litis: S/ {r['Saldo Litis']:,.2f}")
+                        doc.add_paragraph(f"Saldo total (sin gastos): S/ {r['Saldo Total']:,.2f}")
+
+                    doc.add_heading("Gastos del Cliente", level=2)
+                    doc.add_paragraph(f"Gastos pendientes: S/ {pend:,.2f}")
+                    doc.add_paragraph(f"Gastos pagados: S/ {pag:,.2f}")
+
+                    buffer = BytesIO()
+                    doc.save(buffer)
+                    buffer.seek(0)
+
+                    st.download_button(
+                        "⬇️ Descargar Word",
+                        buffer,
+                        file_name=f"estado_cuenta_{exp.replace('/','_')}.docx"
+                    )
+
+            # ---- WORD: FICHA COMPLETA ----
+            with colw2:
+                if st.button("📁 Descargar Ficha Completa (Word)"):
+                    doc = Document()
+                    doc.add_heading("FICHA DEL CASO", level=1)
+
+                    doc.add_heading("Datos del Caso", level=2)
+                    for col in df_caso.columns:
+                        doc.add_paragraph(f"{col}: {df_caso.iloc[0].get(col,'')}")
+
+                    doc.add_heading("Resumen Financiero", level=2)
+                    if r is not None:
+                        for k in [
+                            "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
+                            "Cuota Litis Calculada","Pagado Litis","Saldo Litis","Saldo Total"
+                        ]:
+                            doc.add_paragraph(f"{k}: S/ {r[k]:,.2f}")
+
+                    doc.add_heading("Gastos del Cliente", level=2)
+                    doc.add_paragraph(f"Gastos pendientes: S/ {pend:,.2f}")
+                    doc.add_paragraph(f"Gastos pagados: S/ {pag:,.2f}")
+
+                    buffer = BytesIO()
+                    doc.save(buffer)
+                    buffer.seek(0)
+
+                    st.download_button(
+                        "⬇️ Descargar Ficha (Word)",
+                        buffer,
+                        file_name=f"ficha_caso_{exp.replace('/','_')}.docx"
+                    )
 
 # ==========================================================
 # ==========================================================
