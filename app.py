@@ -7,6 +7,29 @@ import shutil
 from datetime import date, datetime
 
 # ==========================================================
+# FUNCIONES BASE
+# ==========================================================
+def cargar_csv(nombre):
+    if os.path.exists(nombre):
+        return pd.read_csv(nombre)
+    return pd.DataFrame()
+
+def guardar_csv(df, nombre):
+    df.to_csv(nombre, index=False)
+
+
+# ==========================================================
+# ALIAS DE FUNCIONES (COMPATIBILIDAD)
+# ==========================================================
+def load_df(nombre):
+    return cargar_csv(f"{nombre}.csv")
+
+def save_df(nombre, df):
+    guardar_csv(df, f"{nombre}.csv")
+
+def normalize_key(x):
+    return str(x).strip().upper()
+# ==========================================================
 # MARCA 004 – VERSIÓN ESTABLE OPERATIVA
 # Estado: FUNCIONA TODO – NO MODIFICAR NI REDUCIR
 # Añadidos: Edit/Borrar Honorarios + Ficha/Historial Actuaciones (con link OneDrive)
