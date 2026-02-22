@@ -61,8 +61,10 @@ FILES = {
     "honorarios_tipo": "honorarios_tipo.csv",
     "contratos": "contratos.csv",
     "auditoria_mod": "auditoria_mod.csv",
-}
 
+    # ✅ NUEVO (NECESARIO PARA ROLES Y PERMISOS)
+    "permisos": "permisos.csv",
+}
 # ==========================================================
 # ESQUEMAS
 # ==========================================================
