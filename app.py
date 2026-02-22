@@ -796,12 +796,14 @@ def reset_total(borrar_archivos=False):
 st.sidebar.markdown(f"### 🏷️ {APP_VERSION}")
 st.sidebar.write(f"👤 Usuario: {st.session_state.usuario} ({st.session_state.rol})")
 
+# Cerrar sesión
 if st.sidebar.button("Cerrar sesión"):
     st.session_state.usuario = None
     st.session_state.rol = None
     st.session_state.abogado_id = ""
     st.rerun()
 
+# Panel de control protegido (se mantiene igual)
 with st.sidebar.expander("🔒 Panel de control", expanded=False):
     pwd = st.text_input("Clave del panel", type="password")
     if pwd == CONTROL_PASSWORD:
@@ -820,9 +822,11 @@ with st.sidebar.expander("🔒 Panel de control", expanded=False):
         st.info("Panel protegido. (Pide la clave)")
 
 # ==========================================================
-# MENÚ MARCA 004 (sin reducir)
+# MENÚ MARCA 004 (FILTRADO POR ROL – SIN REDUCIR)
 # ==========================================================
-menu = st.sidebar.radio("📌 Menú", [
+rol = str(st.session_state.get("rol","")).strip().lower()
+
+menu_items = [
     "Dashboard",
     "Ficha del Caso",
     "Clientes",
@@ -838,12 +842,52 @@ menu = st.sidebar.radio("📌 Menú", [
     "Documentos",
     "Plantillas de Contrato",
     "Generar Contrato",
- "Repositorio Contratos",
- "Instancias",
+    "Repositorio Contratos",
+    "Instancias",
     "Usuarios",
     "Reportes",
     "Auditoría",
-])
+]
+
+# -------- FILTRO POR ROL --------
+if rol == "abogado":
+    menu_items = [
+        m for m in menu_items
+        if m not in [
+            "Honorarios",
+            "Pagos Honorarios",
+            "Cuota Litis",
+            "Pagos Cuota Litis",
+            "Cronograma de Cuotas",
+            "Usuarios",
+            "Auditoría",
+        ]
+    ]
+
+elif rol in ["secretaria", "secretaria/o", "asistente"]:
+    menu_items = [
+        m for m in menu_items
+        if m not in [
+            "Honorarios",
+            "Pagos Honorarios",
+            "Cuota Litis",
+            "Pagos Cuota Litis",
+            "Cronograma de Cuotas",
+            "Usuarios",
+            "Auditoría",
+            "Abogados",
+        ]
+    ]
+
+elif rol == "solo lectura":
+    menu_items = [
+        m for m in menu_items
+        if m in ["Casos", "Documentos"]
+    ]
+
+# Admin / Personal Administrativo ve todo (sin cambios)
+
+menu = st.sidebar.radio("📌 Menú", menu_items)
 
 # ==========================================================
 # UI HEADER
