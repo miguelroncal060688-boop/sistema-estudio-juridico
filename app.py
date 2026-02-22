@@ -69,23 +69,51 @@ FILES = {
 # ESQUEMAS
 # ==========================================================
 SCHEMAS = {
+    # ======================
+    # USUARIOS / SEGURIDAD
+    # ======================
     "usuarios": ["Usuario","PasswordHash","Rol","AbogadoID","Activo","Creado"],
-    "clientes": ["ID","TipoCliente","Nombre","DNI","Celular","Correo","Direccion","Observaciones","ContactoEmergencia","CelularEmergencia","RazonSocial","RUC","RepresentanteLegal","PartidaElectronica","SedeRegistral"],
-    "abogados": ["ID","Nombre","DNI","Celular","Correo","Colegiatura","ColegioProfesional","Domicilio Procesal","ReferenciaDomicilio","Casilla Electronica","DistritoJudicial","Casilla Judicial","Notas"],
-    "casos": ["ID","Cliente","Abogado","Expediente","Año","Materia","Instancia","Pretension","Juzgado","DistritoJudicial","Contraparte","ContraparteDoc","Observaciones","EstadoCaso","FechaInicio"],
 
+    # ✅ NUEVO – ROLES Y PERMISOS
+    "permisos": ["Rol","Ver","Agregar","Modificar","Borrar"],
+
+    # ======================
+    # ENTIDADES PRINCIPALES
+    # ======================
+    "clientes": [
+        "ID","TipoCliente","Nombre","DNI","Celular","Correo","Direccion",
+        "Observaciones","ContactoEmergencia","CelularEmergencia",
+        "RazonSocial","RUC","RepresentanteLegal",
+        "PartidaElectronica","SedeRegistral"
+    ],
+
+    "abogados": [
+        "ID","Nombre","DNI","Celular","Correo","Colegiatura",
+        "ColegioProfesional","Domicilio Procesal","ReferenciaDomicilio",
+        "Casilla Electronica","DistritoJudicial","Casilla Judicial","Notas"
+    ],
+
+    "casos": [
+        "ID","Cliente","Abogado","Expediente","Año","Materia","Instancia",
+        "Pretension","Juzgado","DistritoJudicial",
+        "Contraparte","ContraparteDoc",
+        "Observaciones","EstadoCaso","FechaInicio"
+    ],
+
+    # ======================
+    # HONORARIOS / PAGOS
+    # ======================
     "honorarios": ["ID","Caso","Monto Pactado","Notas","FechaRegistro"],
     "honorarios_etapas": ["ID","Caso","Etapa","Monto Pactado","Notas","FechaRegistro"],
-
-    # ✅ pagos honorarios por etapa (si venía antiguo, se migra)
     "pagos_honorarios": ["ID","Caso","Etapa","FechaPago","Monto","Observacion"],
 
     "cuota_litis": ["ID","Caso","Monto Base","Porcentaje","Notas","FechaRegistro"],
     "pagos_litis": ["ID","Caso","FechaPago","Monto","Observacion"],
-
     "cuotas": ["ID","Caso","Tipo","NroCuota","FechaVenc","Monto","Notas"],
 
-    # ✅ ACTUACIONES: agrego flag de pago de gastos por el cliente
+    # ======================
+    # ACTUACIONES / DOCUMENTOS
+    # ======================
     "actuaciones": [
         "ID","Caso","Cliente","Fecha","TipoActuacion","Resumen",
         "ProximaAccion","FechaProximaAccion","LinkOneDrive",
@@ -95,38 +123,38 @@ SCHEMAS = {
     "documentos": ["ID","Caso","Tipo","NombreArchivo","Ruta","Fecha","Notas"],
     "plantillas": ["ID","Nombre","Contenido","Notas","Creado"],
 
-    # ✅ CONSULTAS: nuevo módulo
-    "consultas": ["ID","Fecha","Cliente","Caso","Abogado","Consulta","Estrategia","CostoConsulta","HonorariosPropuestos","Proforma","LinkOneDrive","Notas"],
+    # ======================
+    # OTROS MÓDULOS
+    # ======================
+    "consultas": [
+        "ID","Fecha","Cliente","Caso","Abogado","Consulta","Estrategia",
+        "CostoConsulta","HonorariosPropuestos","Proforma",
+        "LinkOneDrive","Notas"
+    ],
+
+    "instancias": [
+        "ID","Caso","TipoInstancia","EstadoActual",
+        "Resultado","Accion","Honorarios","FechaRegistro"
+    ],
+
+    "honorarios_tipo": ["ID","Caso","Tipo","Monto","Notas","FechaRegistro"],
+
+    "contratos": [
+        "ID","Numero","Año","Sigla","NombreContrato",
+        "Caso","Cliente","Abogado","Estado","Archivo","Fecha"
+    ],
+
+    "auditoria_mod": [
+        "ID","Fecha","Usuario","Rol","Accion",
+        "Entidad","EntidadID","Detalle"
+    ],
 }
+
 # ============================
-# MARCA 006: ESQUEMAS PARA ARCHIVOS NUEVOS (evita KeyError)
+# CONSTANTES
 # ============================
-SCHEMAS.setdefault("instancias", [
-    "ID", "Caso", "TipoInstancia", "EstadoActual", "Resultado", "Accion", "Honorarios", "FechaRegistro"
-])
-
-SCHEMAS.setdefault("honorarios_tipo", [
-    "ID", "Caso", "Tipo", "Monto", "Notas", "FechaRegistro"
-])
-
-SCHEMAS.setdefault("contratos", [
-    "ID", "Numero", "Año", "Sigla", "NombreContrato",
-    "Caso", "Cliente", "Abogado", "Estado", "Archivo", "Fecha"
-])
-
-SCHEMAS.setdefault("auditoria_mod", [
-    "ID", "Fecha", "Usuario", "Rol", "Accion", "Entidad", "EntidadID", "Detalle"
-])
 ETAPAS_HONORARIOS = ["Primera instancia", "Segunda instancia", "Casación", "Otros"]
 TIPOS_CUOTA = ["Honorarios", "CuotaLitis"]
-
-# ============================
-# MARCA 006: Esquemas faltantes (evita KeyError)
-# ============================
-SCHEMAS.setdefault("instancias", ["ID","Caso","TipoInstancia","EstadoActual","Resultado","Accion","Honorarios","FechaRegistro"])
-SCHEMAS.setdefault("honorarios_tipo", ["ID","Caso","Tipo","Monto","Notas","FechaRegistro"])
-SCHEMAS.setdefault("contratos", ["ID","Numero","Año","Sigla","NombreContrato","Caso","Cliente","Abogado","Estado","Archivo","Fecha"])
-SCHEMAS.setdefault("auditoria_mod", ["ID","Fecha","Usuario","Rol","Accion","Entidad","EntidadID","Detalle"])
 
 # ==========================================================
 # UTILIDADES
