@@ -794,16 +794,18 @@ def reset_total(borrar_archivos=False):
 # SIDEBAR
 # ==========================================================
 st.sidebar.markdown(f"### 🏷️ {APP_VERSION}")
+
+# -------- USUARIO EN SESIÓN (se mantiene simple aquí) --------
 st.sidebar.write(f"👤 Usuario: {st.session_state.usuario} ({st.session_state.rol})")
 
-# Cerrar sesión
+# -------- CERRAR SESIÓN --------
 if st.sidebar.button("Cerrar sesión"):
     st.session_state.usuario = None
     st.session_state.rol = None
     st.session_state.abogado_id = ""
     st.rerun()
 
-# Panel de control protegido (se mantiene igual)
+# -------- PANEL DE CONTROL (SOLO ADMIN, SE MANTIENE IGUAL) --------
 with st.sidebar.expander("🔒 Panel de control", expanded=False):
     pwd = st.text_input("Clave del panel", type="password")
     if pwd == CONTROL_PASSWORD:
@@ -849,6 +851,10 @@ menu_items = [
     "Auditoría",
 ]
 
+# ✅ NUEVO: Colaboradores SOLO para ADMIN
+if rol == "admin":
+    menu_items.insert(menu_items.index("Usuarios") + 1, "Colaboradores")
+
 # -------- FILTRO POR ROL --------
 if rol == "abogado":
     menu_items = [
@@ -861,6 +867,7 @@ if rol == "abogado":
             "Cronograma de Cuotas",
             "Usuarios",
             "Auditoría",
+            "Colaboradores",
         ]
     ]
 
@@ -876,6 +883,7 @@ elif rol in ["secretaria", "secretaria/o", "asistente"]:
             "Usuarios",
             "Auditoría",
             "Abogados",
+            "Colaboradores",
         ]
     ]
 
@@ -885,10 +893,9 @@ elif rol == "solo lectura":
         if m in ["Casos", "Documentos"]
     ]
 
-# Admin / Personal Administrativo ve todo (sin cambios)
+# Admin / Personal Administrativo ve todo (incluye Colaboradores)
 
 menu = st.sidebar.radio("📌 Menú", menu_items)
-
 # ==========================================================
 # UI HEADER
 # ==========================================================
