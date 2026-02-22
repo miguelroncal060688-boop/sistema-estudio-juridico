@@ -1280,104 +1280,235 @@ if menu == "Abogados":
  st.download_button("⬇️ Descargar abogados (CSV)", df_ab.to_csv(index=False).encode("utf-8"), "abogados.csv")
 
 # ==========================================================
-# CASOS (CRUD) — incluye datos judiciales completos
+# CASOS (CRUD) — incluye datos judiciales completos + DEFENSA CONJUNTA
 # ==========================================================
 if menu == "Casos":
- st.subheader("📁 Casos")
- df_casos = load_df("casos")
- is_readonly = st.session_state.get('rol') == 'asistente'
- accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True)
- clientes_list = load_df("clientes")["Nombre"].tolist() if not load_df("clientes").empty else []
- abogados_list = load_df("abogados")["Nombre"].tolist() if not load_df("abogados").empty else []
- if accion == "Nuevo":
-  if not clientes_list:
-   st.warning("Primero registra clientes.")
-  elif not abogados_list:
-   st.warning("Primero registra abogados.")
-  else:
-   with st.form("nuevo_caso"):
-    cliente = st.selectbox("Cliente", clientes_list)
-    abogado = st.selectbox("Abogado", abogados_list)
-    expediente = st.text_input("Expediente")
-    anio = st.text_input("Año")
-    materia = st.text_input("Materia")
-    instancia = st.selectbox("Instancia", ETAPAS_HONORARIOS)
-    pret = st.text_input("Pretensión")
-    juzgado = st.text_input("Juzgado")
-    distrito_jud = st.text_input("Distrito Judicial")
-    contraparte = st.text_input("Contraparte")
-    contraparte_doc = st.text_input("DNI/RUC Contraparte")
-    obs = st.text_area("Observaciones")
-    estado = st.selectbox("EstadoCaso", ["Activo","En pausa","Cerrado","Archivado"])
-    fi = st.date_input("Fecha inicio", value=date.today())
-    submit = st.form_submit_button("Guardar", disabled=is_readonly)
-   if submit:
-    new_id = next_id(df_casos)
-    df_casos = add_row(df_casos, {
-     "ID": new_id,
-     "Cliente": cliente,
-     "Abogado": abogado,
-     "Expediente": normalize_key(expediente),
-     "Año": anio,
-     "Materia": materia,
-     "Instancia": instancia,
-     "Pretension": pret,
-     "Juzgado": juzgado,
-     "DistritoJudicial": distrito_jud,
-     "Contraparte": contraparte,
-     "ContraparteDoc": contraparte_doc,
-     "Observaciones": obs,
-     "EstadoCaso": estado,
-     "FechaInicio": str(fi)
-    }, "casos")
-    save_df("casos", df_casos)
-    try: _audit_log('ADD','casos', new_id, expediente)
-    except Exception: pass
-    st.success("✅ Caso registrado")
-    st.rerun()
- elif accion == "Editar" and not df_casos.empty:
-  exp_sel = st.selectbox("Expediente", df_casos["Expediente"].tolist(), key='cas_edit_exp')
-  fila = df_casos[df_casos["Expediente"] == exp_sel].iloc[0]
-  with st.form("edit_caso"):
-   cliente = st.selectbox("Cliente", clientes_list, index=clientes_list.index(fila.get('Cliente','')) if fila.get('Cliente','') in clientes_list else 0)
-   abogado = st.selectbox("Abogado", abogados_list, index=abogados_list.index(fila.get('Abogado','')) if fila.get('Abogado','') in abogados_list else 0)
-   anio = st.text_input("Año", value=str(fila.get('Año','')))
-   materia = st.text_input("Materia", value=str(fila.get('Materia','')))
-   instancia = st.selectbox("Instancia", ETAPAS_HONORARIOS, index=ETAPAS_HONORARIOS.index(fila.get('Instancia','')) if fila.get('Instancia','') in ETAPAS_HONORARIOS else 0)
-   pret = st.text_input("Pretensión", value=str(fila.get('Pretension','')))
-   juzgado = st.text_input("Juzgado", value=str(fila.get('Juzgado','')))
-   distrito_jud = st.text_input("Distrito Judicial", value=str(fila.get('DistritoJudicial','')))
-   contraparte = st.text_input("Contraparte", value=str(fila.get('Contraparte','')))
-   contraparte_doc = st.text_input("DNI/RUC Contraparte", value=str(fila.get('ContraparteDoc','')))
-   obs = st.text_area("Observaciones", value=str(fila.get('Observaciones','')))
-   estado = st.selectbox("EstadoCaso", ["Activo","En pausa","Cerrado","Archivado"], index=["Activo","En pausa","Cerrado","Archivado"].index(fila.get('EstadoCaso','Activo')) if fila.get('EstadoCaso','Activo') in ["Activo","En pausa","Cerrado","Archivado"] else 0)
-   submit = st.form_submit_button("Guardar cambios", disabled=is_readonly)
-  if submit:
-   idx = df_casos.index[df_casos["Expediente"] == exp_sel][0]
-   df_casos.loc[idx, [
-    "Cliente","Abogado","Año","Materia","Instancia","Pretension",
-    "Juzgado","DistritoJudicial","Contraparte","ContraparteDoc","Observaciones","EstadoCaso"
-   ]] = [
-    cliente, abogado, anio, materia, instancia, pret,
-    juzgado, distrito_jud, contraparte, contraparte_doc, obs, estado
-   ]
-   save_df("casos", df_casos)
-   try: _audit_log('UPDATE','casos', exp_sel, 'edit')
-   except Exception: pass
-   st.success("✅ Caso actualizado")
-   st.rerun()
- elif accion == "Eliminar" and not df_casos.empty:
-  exp_sel = st.selectbox("Expediente a eliminar", df_casos["Expediente"].tolist(), key='cas_del_exp')
-  st.warning("⚠️ Esta acción no se puede deshacer")
-  if st.button("Eliminar caso", disabled=is_readonly, key='cas_del_btn'):
-   df_casos = df_casos[df_casos["Expediente"] != exp_sel].copy()
-   save_df("casos", df_casos)
-   try: _audit_log('DELETE','casos', exp_sel, '')
-   except Exception: pass
-   st.success("✅ Caso eliminado")
-   st.rerun()
- st.dataframe(df_casos, use_container_width=True)
- st.download_button("⬇️ Descargar casos (CSV)", df_casos.to_csv(index=False).encode("utf-8"), "casos.csv")
+    st.subheader("📁 Casos")
+
+    df_casos = load_df("casos")
+    is_readonly = st.session_state.get('rol') == 'asistente'
+    accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True, key="cas_accion")
+
+    # ✅ Asegurar campos nuevos en el esquema (para que se guarden en CSV)
+    try:
+        if "casos" in SCHEMAS:
+            for extra in ["DefensaConjunta", "NumAbogados", "AbogadosExtra"]:
+                if extra not in SCHEMAS["casos"]:
+                    SCHEMAS["casos"].append(extra)
+    except Exception:
+        pass
+
+    # Cargar listas una sola vez (evita múltiples load_df)
+    df_clientes = load_df("clientes")
+    df_abogados = load_df("abogados")
+    clientes_list = df_clientes["Nombre"].tolist() if (df_clientes is not None and not df_clientes.empty and "Nombre" in df_clientes.columns) else []
+    abogados_list = df_abogados["Nombre"].tolist() if (df_abogados is not None and not df_abogados.empty and "Nombre" in df_abogados.columns) else []
+
+    # ----------------------------------------------------------
+    # NUEVO
+    # ----------------------------------------------------------
+    if accion == "Nuevo":
+        if not clientes_list:
+            st.warning("Primero registra clientes.")
+        elif not abogados_list:
+            st.warning("Primero registra abogados.")
+        else:
+            with st.form("nuevo_caso"):
+                cliente = st.selectbox("Cliente", clientes_list, key="cas_new_cliente")
+
+                abogado = st.selectbox("Abogado (principal)", abogados_list, key="cas_new_abogado")
+
+                # ✅ DEFENSA CONJUNTA
+                defensa_conjunta = st.checkbox("✅ DEFENSA CONJUNTA (más abogados)", value=False, key="cas_new_defconj")
+                num_abogados = 1
+                abogados_extra = []
+
+                if defensa_conjunta:
+                    num_abogados = st.number_input(
+                        "¿Cuántos abogados en total participarán?",
+                        min_value=2, max_value=6, value=2, step=1,
+                        key="cas_new_numab"
+                    )
+                    st.caption("Selecciona los abogados adicionales (además del principal).")
+                    # Habilitar selectboxes según el número elegido
+                    for i in range(int(num_abogados) - 1):
+                        abogados_extra.append(
+                            st.selectbox(
+                                f"Abogado adicional #{i+1}",
+                                abogados_list,
+                                key=f"cas_new_ab_extra_{i}"
+                            )
+                        )
+
+                expediente = st.text_input("Expediente", key="cas_new_exp")
+                anio = st.text_input("Año", key="cas_new_anio")
+                materia = st.text_input("Materia", key="cas_new_mat")
+                instancia = st.selectbox("Instancia", ETAPAS_HONORARIOS, key="cas_new_inst")
+                pret = st.text_input("Pretensión", key="cas_new_pret")
+                juzgado = st.text_input("Juzgado", key="cas_new_juz")
+                distrito_jud = st.text_input("Distrito Judicial", key="cas_new_dist")
+                contraparte = st.text_input("Contraparte", key="cas_new_contra")
+                contraparte_doc = st.text_input("DNI/RUC Contraparte", key="cas_new_contradoc")
+                obs = st.text_area("Observaciones", key="cas_new_obs")
+                estado = st.selectbox("EstadoCaso", ["Activo","En pausa","Cerrado","Archivado"], key="cas_new_estado")
+                fi = st.date_input("Fecha inicio", value=date.today(), key="cas_new_fi")
+
+                submit = st.form_submit_button("Guardar", disabled=is_readonly)
+
+            if submit:
+                new_id = next_id(df_casos)
+                df_casos = add_row(df_casos, {
+                    "ID": new_id,
+                    "Cliente": cliente,
+                    "Abogado": abogado,
+                    "Expediente": normalize_key(expediente),
+                    "Año": anio,
+                    "Materia": materia,
+                    "Instancia": instancia,
+                    "Pretension": pret,
+                    "Juzgado": juzgado,
+                    "DistritoJudicial": distrito_jud,
+                    "Contraparte": contraparte,
+                    "ContraparteDoc": contraparte_doc,
+                    "Observaciones": obs,
+                    "EstadoCaso": estado,
+                    "FechaInicio": str(fi),
+
+                    # ✅ NUEVOS CAMPOS (no borran los existentes)
+                    "DefensaConjunta": "1" if defensa_conjunta else "0",
+                    "NumAbogados": int(num_abogados),
+                    "AbogadosExtra": " | ".join([a for a in abogados_extra if str(a).strip() != ""])
+                }, "casos")
+
+                save_df("casos", df_casos)
+                try:
+                    _audit_log('ADD','casos', new_id, expediente)
+                except Exception:
+                    pass
+                st.success("✅ Caso registrado")
+                st.rerun()
+
+    # ----------------------------------------------------------
+    # EDITAR
+    # ----------------------------------------------------------
+    elif accion == "Editar" and df_casos is not None and not df_casos.empty:
+        exp_sel = st.selectbox("Expediente", df_casos["Expediente"].tolist(), key='cas_edit_exp')
+        fila = df_casos[df_casos["Expediente"] == exp_sel].iloc[0]
+
+        with st.form("edit_caso"):
+            cliente = st.selectbox(
+                "Cliente",
+                clientes_list,
+                index=clientes_list.index(fila.get('Cliente','')) if fila.get('Cliente','') in clientes_list else 0,
+                key="cas_edit_cliente"
+            )
+            abogado = st.selectbox(
+                "Abogado (principal)",
+                abogados_list,
+                index=abogados_list.index(fila.get('Abogado','')) if fila.get('Abogado','') in abogados_list else 0,
+                key="cas_edit_abogado"
+            )
+
+            # ✅ DEFENSA CONJUNTA (editar)
+            defconj_val = str(fila.get("DefensaConjunta","0")) == "1"
+            defensa_conjunta = st.checkbox("✅ DEFENSA CONJUNTA (más abogados)", value=defconj_val, key="cas_edit_defconj")
+
+            num_prev = int(pd.to_numeric(fila.get("NumAbogados", 1), errors="coerce") or 1)
+            extras_prev = str(fila.get("AbogadosExtra","") or "")
+            extras_list_prev = [x.strip() for x in extras_prev.split("|") if x.strip()]
+
+            num_abogados = 1
+            abogados_extra = []
+
+            if defensa_conjunta:
+                num_abogados = st.number_input(
+                    "¿Cuántos abogados en total participarán?",
+                    min_value=2, max_value=6,
+                    value=max(2, num_prev),
+                    step=1,
+                    key="cas_edit_numab"
+                )
+                st.caption("Selecciona los abogados adicionales (además del principal).")
+                for i in range(int(num_abogados) - 1):
+                    default = extras_list_prev[i] if i < len(extras_list_prev) else (abogados_list[0] if abogados_list else "")
+                    idx_def = abogados_list.index(default) if default in abogados_list else 0
+                    abogados_extra.append(
+                        st.selectbox(
+                            f"Abogado adicional #{i+1}",
+                            abogados_list,
+                            index=idx_def,
+                            key=f"cas_edit_ab_extra_{i}"
+                        )
+                    )
+            else:
+                num_abogados = 1
+                abogados_extra = []
+
+            anio = st.text_input("Año", value=str(fila.get('Año','')), key="cas_edit_anio")
+            materia = st.text_input("Materia", value=str(fila.get('Materia','')), key="cas_edit_mat")
+            instancia = st.selectbox(
+                "Instancia",
+                ETAPAS_HONORARIOS,
+                index=ETAPAS_HONORARIOS.index(fila.get('Instancia','')) if fila.get('Instancia','') in ETAPAS_HONORARIOS else 0,
+                key="cas_edit_inst"
+            )
+            pret = st.text_input("Pretensión", value=str(fila.get('Pretension','')), key="cas_edit_pret")
+            juzgado = st.text_input("Juzgado", value=str(fila.get('Juzgado','')), key="cas_edit_juz")
+            distrito_jud = st.text_input("Distrito Judicial", value=str(fila.get('DistritoJudicial','')), key="cas_edit_dist")
+            contraparte = st.text_input("Contraparte", value=str(fila.get('Contraparte','')), key="cas_edit_contra")
+            contraparte_doc = st.text_input("DNI/RUC Contraparte", value=str(fila.get('ContraparteDoc','')), key="cas_edit_contradoc")
+            obs = st.text_area("Observaciones", value=str(fila.get('Observaciones','')), key="cas_edit_obs")
+            estado = st.selectbox(
+                "EstadoCaso",
+                ["Activo","En pausa","Cerrado","Archivado"],
+                index=["Activo","En pausa","Cerrado","Archivado"].index(fila.get('EstadoCaso','Activo')) if fila.get('EstadoCaso','Activo') in ["Activo","En pausa","Cerrado","Archivado"] else 0,
+                key="cas_edit_estado"
+            )
+            submit = st.form_submit_button("Guardar cambios", disabled=is_readonly)
+
+        if submit:
+            idx = df_casos.index[df_casos["Expediente"] == exp_sel][0]
+            df_casos.loc[idx, [
+                "Cliente","Abogado","Año","Materia","Instancia","Pretension",
+                "Juzgado","DistritoJudicial","Contraparte","ContraparteDoc","Observaciones","EstadoCaso",
+
+                # ✅ NUEVOS CAMPOS
+                "DefensaConjunta","NumAbogados","AbogadosExtra"
+            ]] = [
+                cliente, abogado, anio, materia, instancia, pret,
+                juzgado, distrito_jud, contraparte, contraparte_doc, obs, estado,
+
+                "1" if defensa_conjunta else "0",
+                int(num_abogados),
+                " | ".join([a for a in abogados_extra if str(a).strip() != ""])
+            ]
+
+            save_df("casos", df_casos)
+            try:
+                _audit_log('UPDATE','casos', exp_sel, 'edit')
+            except Exception:
+                pass
+            st.success("✅ Caso actualizado")
+            st.rerun()
+
+    # ----------------------------------------------------------
+    # ELIMINAR
+    # ----------------------------------------------------------
+    elif accion == "Eliminar" and df_casos is not None and not df_casos.empty:
+        exp_sel = st.selectbox("Expediente a eliminar", df_casos["Expediente"].tolist(), key='cas_del_exp')
+        st.warning("⚠️ Esta acción no se puede deshacer")
+        if st.button("Eliminar caso", disabled=is_readonly, key='cas_del_btn'):
+            df_casos = df_casos[df_casos["Expediente"] != exp_sel].copy()
+            save_df("casos", df_casos)
+            try:
+                _audit_log('DELETE','casos', exp_sel, '')
+            except Exception:
+                pass
+            st.success("✅ Caso eliminado")
+            st.rerun()
+
+    st.dataframe(df_casos, use_container_width=True)
+    st.download_button("⬇️ Descargar casos (CSV)", df_casos.to_csv(index=False).encode("utf-8"), "casos.csv")
 
 # ==========================================================
 # HONORARIOS (Total + Por etapa) ✅ DEFINITIVO
