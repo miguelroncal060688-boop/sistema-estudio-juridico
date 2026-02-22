@@ -3810,7 +3810,7 @@ def _repo_sync_contratos():
     return repo
 
 # =========================
-# UI del repositorio (CON BOTONES + RESET TOTAL + DETALLE POR CASO)
+# UI del repositorio (CON BOTONES + RESET TOTAL + DETALLE POR CASO + BORRAR GENERADOS)
 # =========================
 if 'menu' in globals() and menu == 'Repositorio Contratos':
     st.subheader('📦 Repositorio de Contratos')
@@ -3903,15 +3903,112 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
             use_container_width=True
         )
 
-        # ===== Detalle por expediente =====
+        # ===== Detalle por expediente + BOTONES BORRAR GENERADOS =====
         st.divider()
         st.markdown("## 🔎 Detalle / Visualización por caso (expediente)")
         exp_opts = sorted([e for e in repo['Expediente'].astype(str).unique().tolist() if str(e).strip() != ""])
+        exp_sel = None
+
         if exp_opts:
             exp_sel = st.selectbox("Expediente", exp_opts, key="rc_exp_det")
             det = repo[repo['Expediente'].astype(str) == str(exp_sel)].copy()
-            det.sort_values(['CategoriaContrato','Estado','Version'], inplace=True, ascending=[True, True, False], errors='ignore')
+
+            # ✅ FIX: sort_values no admite errors='ignore'
+            if 'CategoriaContrato' in det.columns:
+                det['CategoriaContrato'] = det['CategoriaContrato'].astype(str)
+            if 'Estado' in det.columns:
+                det['Estado'] = det['Estado'].astype(str)
+            if 'Version' in det.columns:
+                det['Version'] = pd.to_numeric(det['Version'], errors='coerce').fillna(1).astype(int)
+
+            sort_cols = [c for c in ['CategoriaContrato','Estado','Version'] if c in det.columns]
+            if sort_cols:
+                asc = [True, True, False][:len(sort_cols)]
+                det.sort_values(sort_cols, inplace=True, ascending=asc)
+
             st.dataframe(det[['ID','Archivo','Estado','CategoriaContrato','Version','FechaCreado','FechaFirmado','Visible']], use_container_width=True)
+
+            # ✅ BOTONES ADMIN: BORRAR GENERADOS (POR CASO / TODO)
+            if is_admin:
+                with st.expander("🧹 ADMIN: Borrar contratos generados (archivos en generados/)", expanded=False):
+                    st.warning("Estas acciones borran ARCHIVOS físicos en generados/. No modifican honorarios ni datos del caso.")
+
+                    cA, cB = st.columns(2)
+
+                    with cA:
+                        st.markdown("### 🧾 Borrar SOLO por expediente")
+                        only_hist = st.checkbox("Borrar SOLO históricos (recomendado)", value=True, key="rc_delgen_only_hist")
+                        conf1 = st.text_input("Escribe BORRAR-CASO para confirmar", key="rc_delgen_conf_case")
+
+                        if st.button("🧨 Borrar generados del expediente", key="rc_delgen_case_btn",
+                                     disabled=(conf1.strip().upper() != "BORRAR-CASO")):
+                            repo2 = _repo_contratos_load()
+                            mask_exp = repo2['Expediente'].astype(str) == str(exp_sel)
+                            if only_hist:
+                                mask_exp = mask_exp & (repo2.get('CategoriaContrato','Histórico').astype(str) != 'Vigente')
+
+                            to_delete = repo2[mask_exp].copy()
+                            borrados = 0
+
+                            for ridx in to_delete.index:
+                                ruta_del = str(repo2.at[ridx, 'Ruta'])
+                                if ruta_del and os.path.exists(ruta_del):
+                                    try:
+                                        os.remove(ruta_del)
+                                        borrados += 1
+                                    except Exception:
+                                        pass
+
+                                    if ruta_del.lower().endswith(".txt"):
+                                        docx_path = ruta_del[:-4] + ".docx"
+                                        if os.path.exists(docx_path):
+                                            try:
+                                                os.remove(docx_path)
+                                            except Exception:
+                                                pass
+
+                                stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                repo2.at[ridx, 'Existe'] = '0'
+                                repo2.at[ridx, 'Historial'] = _repo_append_hist(
+                                    str(repo2.at[ridx,'Historial']),
+                                    f"[{stamp}] Archivos físicos borrados en generados/ (por expediente)"
+                                )
+
+                            _repo_contratos_save(repo2)
+                            st.success(f"✅ Borrados {borrados} archivos del expediente {exp_sel}")
+                            st.rerun()
+
+                    with cB:
+                        st.markdown("### 🧨 Borrar TODO generados/")
+                        conf2 = st.text_input("Escribe BORRAR-TODO para confirmar", key="rc_delgen_conf_all")
+
+                        if st.button("🧨 Borrar TODO generados/", key="rc_delgen_all_btn",
+                                     disabled=(conf2.strip().upper() != "BORRAR-TODO")):
+                            borrados = 0
+                            try:
+                                if os.path.exists(GENERADOS_DIR):
+                                    for fn in os.listdir(GENERADOS_DIR):
+                                        try:
+                                            os.remove(os.path.join(GENERADOS_DIR, fn))
+                                            borrados += 1
+                                        except Exception:
+                                            pass
+
+                                repo2 = _repo_contratos_load()
+                                if not repo2.empty:
+                                    repo2['Existe'] = '0'
+                                    stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                    for i in repo2.index:
+                                        repo2.at[i,'Historial'] = _repo_append_hist(
+                                            str(repo2.at[i,'Historial']),
+                                            f"[{stamp}] Limpieza total generados/ (archivos físicos borrados)"
+                                        )
+                                    _repo_contratos_save(repo2)
+
+                                st.success(f"✅ Borrados {borrados} archivos de generados/")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error al borrar generados/: {e}")
         else:
             st.info("Aún no hay expedientes detectados en el repositorio.")
 
@@ -4050,7 +4147,6 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                             os.remove(ruta_del)
                         except Exception:
                             pass
-                        # también borrar docx paralelo si existe
                         if ruta_del.lower().endswith(".txt"):
                             docx_path = ruta_del[:-4] + ".docx"
                             if os.path.exists(docx_path):
@@ -4069,7 +4165,6 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
             if str(row.get('Existe','')) == '1' and ruta and os.path.exists(ruta):
                 ext = os.path.splitext(ruta)[1].lower()
 
-                # Vista previa si es TXT
                 if ext == '.txt':
                     try:
                         with open(ruta, 'r', encoding='utf-8', errors='ignore') as f:
@@ -4079,7 +4174,6 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                     except Exception:
                         pass
 
-                # Descargar archivo actual
                 mime = 'text/plain' if ext == '.txt' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 with open(ruta, 'rb') as f:
                     data = f.read()
@@ -4092,7 +4186,6 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                     key=f'rc_dl_{sel_id}'
                 )
 
-                # Si es .txt, ofrecer .docx paralelo si existe
                 if ext == '.txt':
                     docx_path = ruta[:-4] + '.docx'
                     if os.path.exists(docx_path):
