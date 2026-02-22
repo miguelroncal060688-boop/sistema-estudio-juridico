@@ -197,17 +197,30 @@ FILES = {
 # SCHEMAS
 # ==========================================================
 SCHEMAS = {
-    # --- EXISTENTES ---
+    # ======================
+    # USUARIOS / ROLES
+    # ======================
     "usuarios": [
         "Usuario","PasswordHash","Rol","AbogadoID",
         "Activo","Creado","NombreCompleto","DNI"
     ],
 
+    # ======================
+    # ABOGADOS / CLIENTES
+    # ======================
     "abogados": [
         "ID","Nombre","DNI","Colegiatura",
         "Celular","Correo","Activo","Observaciones"
     ],
 
+    "clientes": [
+        "ID","Nombre","DNI","Celular",
+        "Correo","Direccion","Observaciones"
+    ],
+
+    # ======================
+    # CASOS
+    # ======================
     "casos": [
         "ID","Expediente","Cliente","Abogado",
         "Materia","EstadoCaso","Instancia",
@@ -215,30 +228,32 @@ SCHEMAS = {
         "AbogadosExtra","Delegados","Observaciones"
     ],
 
-    # ... (los demás que ya tienes)
-
-    # ✅ NUEVO: COLABORADORES
-    "colaboradores": [
-        "ID",
-        "Nombre",
-        "DNI",
-        "Tipo",
-        "Usuario",
-        "Activo",
-        "Observaciones",
-    ],
-}
-
     # ======================
     # HONORARIOS / PAGOS
     # ======================
-    "honorarios": ["ID","Caso","Monto Pactado","Notas","FechaRegistro"],
-    "honorarios_etapas": ["ID","Caso","Etapa","Monto Pactado","Notas","FechaRegistro"],
-    "pagos_honorarios": ["ID","Caso","Etapa","FechaPago","Monto","Observacion"],
+    "honorarios": [
+        "ID","Caso","Monto Pactado","Notas","FechaRegistro"
+    ],
 
-    "cuota_litis": ["ID","Caso","Monto Base","Porcentaje","Notas","FechaRegistro"],
-    "pagos_litis": ["ID","Caso","FechaPago","Monto","Observacion"],
-    "cuotas": ["ID","Caso","Tipo","NroCuota","FechaVenc","Monto","Notas"],
+    "honorarios_etapas": [
+        "ID","Caso","Etapa","Monto Pactado","Notas","FechaRegistro"
+    ],
+
+    "pagos_honorarios": [
+        "ID","Caso","Etapa","FechaPago","Monto","Observacion"
+    ],
+
+    "cuota_litis": [
+        "ID","Caso","Monto Base","Porcentaje","Notas","FechaRegistro"
+    ],
+
+    "pagos_litis": [
+        "ID","Caso","FechaPago","Monto","Observacion"
+    ],
+
+    "cuotas": [
+        "ID","Caso","Tipo","NroCuota","FechaVenc","Monto","Notas"
+    ],
 
     # ======================
     # ACTUACIONES / DOCUMENTOS
@@ -249,8 +264,13 @@ SCHEMAS = {
         "CostasAranceles","Gastos","Notas","GastosPagado"
     ],
 
-    "documentos": ["ID","Caso","Tipo","NombreArchivo","Ruta","Fecha","Notas"],
-    "plantillas": ["ID","Nombre","Contenido","Notas","Creado"],
+    "documentos": [
+        "ID","Caso","Tipo","NombreArchivo","Ruta","Fecha","Notas"
+    ],
+
+    "plantillas": [
+        "ID","Nombre","Contenido","Notas","Creado"
+    ],
 
     # ======================
     # OTROS MÓDULOS
@@ -266,7 +286,9 @@ SCHEMAS = {
         "Resultado","Accion","Honorarios","FechaRegistro"
     ],
 
-    "honorarios_tipo": ["ID","Caso","Tipo","Monto","Notas","FechaRegistro"],
+    "honorarios_tipo": [
+        "ID","Caso","Tipo","Monto","Notas","FechaRegistro"
+    ],
 
     "contratos": [
         "ID","Numero","Año","Sigla","NombreContrato",
@@ -277,8 +299,27 @@ SCHEMAS = {
         "ID","Fecha","Usuario","Rol","Accion",
         "Entidad","EntidadID","Detalle"
     ],
-}
 
+    # ======================
+    # PERMISOS
+    # ======================
+    "permisos": [
+        "Rol","Ver","Agregar","Modificar","Borrar"
+    ],
+
+    # ======================
+    # ✅ NUEVO: COLABORADORES
+    # ======================
+    "colaboradores": [
+        "ID",
+        "Nombre",
+        "DNI",
+        "Tipo",
+        "Usuario",
+        "Activo",
+        "Observaciones"
+    ],
+}
 # ============================
 # CONSTANTES
 # ============================
