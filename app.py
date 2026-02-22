@@ -1298,26 +1298,72 @@ if menu == "Casos":
     except Exception:
         pass
 
-    # Cargar listas 1 vez
+    # -------------------------
+    # Cargar clientes/abogados UNA sola vez + tolerar columnas antiguas
+    # -------------------------
     df_clientes = load_df("clientes")
     df_abogados = load_df("abogados")
-    clientes_list = df_clientes["Nombre"].tolist() if (df_clientes is not None and not df_clientes.empty and "Nombre" in df_clientes.columns) else []
-    abogados_list = df_abogados["Nombre"].tolist() if (df_abogados is not None and not df_abogados.empty and "Nombre" in df_abogados.columns) else []
+
+    # Clientes: asegurar columna Nombre para usar en Casos
+    if df_clientes is None:
+        df_clientes = pd.DataFrame()
+    if not df_clientes.empty:
+        if "Nombre" not in df_clientes.columns:
+            for alt in ["Nombre completo", "NombreCompleto", "NOMBRE", "RazonSocial", "Razón Social", "Razon Social"]:
+                if alt in df_clientes.columns:
+                    df_clientes["Nombre"] = df_clientes[alt]
+                    break
+        if "Nombre" not in df_clientes.columns:
+            df_clientes["Nombre"] = ""
+
+    clientes_list = (
+        df_clientes["Nombre"].dropna().astype(str).str.strip().tolist()
+        if (df_clientes is not None and not df_clientes.empty and "Nombre" in df_clientes.columns)
+        else []
+    )
+    clientes_list = [c for c in clientes_list if c != ""]
+
+    # Abogados: asegurar columna Nombre
+    if df_abogados is None:
+        df_abogados = pd.DataFrame()
+    if not df_abogados.empty:
+        if "Nombre" not in df_abogados.columns:
+            for alt in ["NOMBRE", "Nombre completo", "NombreCompleto"]:
+                if alt in df_abogados.columns:
+                    df_abogados["Nombre"] = df_abogados[alt]
+                    break
+        if "Nombre" not in df_abogados.columns:
+            df_abogados["Nombre"] = ""
+
+    abogados_list = (
+        df_abogados["Nombre"].dropna().astype(str).str.strip().tolist()
+        if (df_abogados is not None and not df_abogados.empty and "Nombre" in df_abogados.columns)
+        else []
+    )
+    abogados_list = [a for a in abogados_list if a != ""]
 
     # ----------------------------------------------------------
     # NUEVO
     # ----------------------------------------------------------
     if accion == "Nuevo":
         if not clientes_list:
-            st.warning("Primero registra clientes.")
+            st.warning("Primero registra clientes. (No se encontró columna Nombre utilizable en clientes.csv)")
         elif not abogados_list:
             st.warning("Primero registra abogados.")
         else:
-            # ✅ CONTROLES DINÁMICOS FUERA DEL FORM (para que se rendericen bien)
-            st.markdown("### ⚖️ Configuración de defensa")
-            abogado_principal_preview = st.selectbox("Abogado (principal)", abogados_list, key="cas_new_abogado_preview")
+            # ✅ CONTROLES DINÁMICOS FUERA DEL FORM: se renderizan al instante
+            st.markdown("### ⚖️ Defensa del caso")
+            abogado_principal_preview = st.selectbox(
+                "Abogado (principal)",
+                abogados_list,
+                key="cas_new_abogado_preview"
+            )
 
-            defensa_conjunta = st.checkbox("✅ DEFENSA CONJUNTA (más abogados)", value=False, key="cas_new_defconj")
+            defensa_conjunta = st.checkbox(
+                "✅ DEFENSA CONJUNTA (permitir más abogados)",
+                value=False,
+                key="cas_new_defconj"
+            )
 
             num_abogados = 1
             if defensa_conjunta:
@@ -1326,14 +1372,13 @@ if menu == "Casos":
                     min_value=2, max_value=6, value=2, step=1,
                     key="cas_new_numab"
                 )
-                st.caption("Los abogados adicionales se elegirán dentro del formulario.")
 
             st.divider()
 
             with st.form("nuevo_caso"):
                 cliente = st.selectbox("Cliente", clientes_list, key="cas_new_cliente")
 
-                # ✅ reutilizamos el abogado principal elegido arriba
+                # Abogado principal (se preselecciona el de arriba)
                 abogado = st.selectbox(
                     "Abogado (principal)",
                     abogados_list,
@@ -1341,13 +1386,14 @@ if menu == "Casos":
                     key="cas_new_abogado"
                 )
 
+                # ✅ Abogados adicionales dentro del form (se habilitan según num_abogados)
                 abogados_extra = []
                 if defensa_conjunta:
                     st.markdown("### 👥 Abogados adicionales")
-                    # Opcional: no permitir que el principal se repita como adicional
+                    # Evitar duplicado del principal (opcional)
                     opciones_extra = [a for a in abogados_list if a != abogado]
                     if not opciones_extra:
-                        opciones_extra = abogados_list[:]  # fallback
+                        opciones_extra = abogados_list[:]
 
                     for i in range(int(num_abogados) - 1):
                         abogados_extra.append(
