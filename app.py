@@ -3572,42 +3572,105 @@ if menu == "Usuarios":
     st.divider()
     st.dataframe(usuarios, use_container_width=True)
 # ==========================================================
-# REPORTES (pestañas)
+# REPORTES (FILTRADOS POR ROL)
 # ==========================================================
 if menu == "Reportes":
-    st.subheader("📈 Reportes")
-    df_res = resumen_financiero_df()
+    st.subheader("📊 Reportes")
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Saldos por caso", "Saldos por cliente", "Actuaciones", "Consultas", "Documentos"])
+    rol = str(st.session_state.get("rol","")).strip().lower()
 
-    with tab1:
-        st.dataframe(df_res, use_container_width=True)
-        st.download_button("⬇️ Descargar reporte casos (CSV)", df_res.to_csv(index=False).encode("utf-8"), "reporte_casos.csv")
+    # Cargar casos y aplicar visibilidad por rol (BLOQUE A)
+    df_casos_all = load_df("casos")
+    df_casos_vis = filtrar_casos_por_rol(df_casos_all)
 
-    with tab2:
-        if df_res.empty:
-            st.info("Sin datos.")
+    # ------------------------------------------------------
+    # REPORTE: CASOS VISIBLES
+    # ------------------------------------------------------
+    st.markdown("### 📁 Casos visibles")
+
+    if df_casos_vis is None or df_casos_vis.empty:
+        st.info("No tienes casos asignados o delegados.")
+    else:
+        columnas = [
+            c for c in [
+                "Expediente","Cliente","Abogado","Materia",
+                "Instancia","EstadoCaso","Contraparte","DistritoJudicial"
+            ]
+            if c in df_casos_vis.columns
+        ]
+
+        st.dataframe(df_casos_vis[columnas], use_container_width=True)
+
+        st.download_button(
+            "⬇️ Descargar mis casos (CSV)",
+            df_casos_vis.to_csv(index=False).encode("utf-8"),
+            "mis_casos.csv"
+        )
+
+    st.divider()
+
+    # ------------------------------------------------------
+    # REPORTE: ACTUACIONES (solo de casos visibles)
+    # ------------------------------------------------------
+    st.markdown("### 🧾 Actuaciones")
+
+    df_act = load_df("actuaciones")
+
+    if df_act is None or df_act.empty or df_casos_vis is None or df_casos_vis.empty:
+        st.info("No hay actuaciones para mostrar.")
+    else:
+        if "Caso" in df_act.columns and "Expediente" in df_casos_vis.columns:
+            visibles = (
+                df_casos_vis["Expediente"]
+                .astype(str)
+                .apply(normalize_key)
+                .tolist()
+            )
+
+            actv = df_act[
+                df_act["Caso"]
+                .astype(str)
+                .apply(normalize_key)
+                .isin(visibles)
+            ].copy()
+
+            if actv.empty:
+                st.info("No hay actuaciones para tus casos.")
+            else:
+                st.dataframe(
+                    actv.sort_values("Fecha", ascending=False),
+                    use_container_width=True
+                )
+
+                st.download_button(
+                    "⬇️ Descargar actuaciones (CSV)",
+                    actv.to_csv(index=False).encode("utf-8"),
+                    "actuaciones_mis_casos.csv"
+                )
+
+    st.divider()
+
+    # ------------------------------------------------------
+    # REPORTE FINANCIERO (SOLO ADMIN / ADMINISTRATIVO)
+    # ------------------------------------------------------
+    if rol in ["admin", "personal administrativo"]:
+        st.markdown("### 💰 Reporte financiero")
+
+        # Usa TU función existente (no la inventamos)
+        df_fin = resumen_financiero_df()
+
+        if df_fin is None or df_fin.empty:
+            st.info("No hay información financiera.")
         else:
-            cli = df_res.groupby("Cliente", as_index=False).agg({
-                "Honorario Pendiente":"sum",
-                "Saldo Litis":"sum"
-            })
-            cli["SaldoTotal"] = cli["Honorario Pendiente"] + cli["Saldo Litis"]
-            cli.sort_values("SaldoTotal", ascending=False, inplace=True)
-            st.dataframe(cli, use_container_width=True)
-            st.download_button("⬇️ Descargar reporte clientes (CSV)", cli.to_csv(index=False).encode("utf-8"), "reporte_clientes.csv")
+            st.dataframe(df_fin, use_container_width=True)
 
-    with tab3:
-        st.dataframe(actuaciones.sort_values("Fecha", ascending=False), use_container_width=True)
-        st.download_button("⬇️ Descargar actuaciones (CSV)", actuaciones.to_csv(index=False).encode("utf-8"), "reporte_actuaciones.csv")
-
-    with tab4:
-        st.dataframe(consultas.sort_values("Fecha", ascending=False), use_container_width=True)
-        st.download_button("⬇️ Descargar consultas (CSV)", consultas.to_csv(index=False).encode("utf-8"), "reporte_consultas.csv")
-
-    with tab5:
-        st.dataframe(documentos.sort_values("Fecha", ascending=False), use_container_width=True)
-        st.download_button("⬇️ Descargar documentos (CSV)", documentos.to_csv(index=False).encode("utf-8"), "reporte_documentos.csv")
+            st.download_button(
+                "⬇️ Descargar reporte financiero (CSV)",
+                df_fin.to_csv(index=False).encode("utf-8"),
+                "reporte_financiero.csv"
+            )
+    else:
+        st.info("🔒 Tu rol no tiene acceso a reportes financieros.")
 
 # ==========================================================
 # AUDITORÍA (huérfanos)
