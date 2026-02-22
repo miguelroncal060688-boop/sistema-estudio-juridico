@@ -1280,7 +1280,7 @@ if menu == "Abogados":
  st.download_button("⬇️ Descargar abogados (CSV)", df_ab.to_csv(index=False).encode("utf-8"), "abogados.csv")
 
 # ==========================================================
-# CASOS (CRUD) — incluye datos judiciales completos + DEFENSA CONJUNTA
+# CASOS (CRUD) — incluye datos judiciales completos + DEFENSA CONJUNTA (estable)
 # ==========================================================
 if menu == "Casos":
     st.subheader("📁 Casos")
@@ -1298,7 +1298,7 @@ if menu == "Casos":
     except Exception:
         pass
 
-    # Cargar listas una sola vez (evita múltiples load_df)
+    # Cargar listas 1 vez
     df_clientes = load_df("clientes")
     df_abogados = load_df("abogados")
     clientes_list = df_clientes["Nombre"].tolist() if (df_clientes is not None and not df_clientes.empty and "Nombre" in df_clientes.columns) else []
@@ -1313,29 +1313,47 @@ if menu == "Casos":
         elif not abogados_list:
             st.warning("Primero registra abogados.")
         else:
+            # ✅ CONTROLES DINÁMICOS FUERA DEL FORM (para que se rendericen bien)
+            st.markdown("### ⚖️ Configuración de defensa")
+            abogado_principal_preview = st.selectbox("Abogado (principal)", abogados_list, key="cas_new_abogado_preview")
+
+            defensa_conjunta = st.checkbox("✅ DEFENSA CONJUNTA (más abogados)", value=False, key="cas_new_defconj")
+
+            num_abogados = 1
+            if defensa_conjunta:
+                num_abogados = st.number_input(
+                    "¿Cuántos abogados en total participarán?",
+                    min_value=2, max_value=6, value=2, step=1,
+                    key="cas_new_numab"
+                )
+                st.caption("Los abogados adicionales se elegirán dentro del formulario.")
+
+            st.divider()
+
             with st.form("nuevo_caso"):
                 cliente = st.selectbox("Cliente", clientes_list, key="cas_new_cliente")
 
-                abogado = st.selectbox("Abogado (principal)", abogados_list, key="cas_new_abogado")
+                # ✅ reutilizamos el abogado principal elegido arriba
+                abogado = st.selectbox(
+                    "Abogado (principal)",
+                    abogados_list,
+                    index=abogados_list.index(abogado_principal_preview) if abogado_principal_preview in abogados_list else 0,
+                    key="cas_new_abogado"
+                )
 
-                # ✅ DEFENSA CONJUNTA
-                defensa_conjunta = st.checkbox("✅ DEFENSA CONJUNTA (más abogados)", value=False, key="cas_new_defconj")
-                num_abogados = 1
                 abogados_extra = []
-
                 if defensa_conjunta:
-                    num_abogados = st.number_input(
-                        "¿Cuántos abogados en total participarán?",
-                        min_value=2, max_value=6, value=2, step=1,
-                        key="cas_new_numab"
-                    )
-                    st.caption("Selecciona los abogados adicionales (además del principal).")
-                    # Habilitar selectboxes según el número elegido
+                    st.markdown("### 👥 Abogados adicionales")
+                    # Opcional: no permitir que el principal se repita como adicional
+                    opciones_extra = [a for a in abogados_list if a != abogado]
+                    if not opciones_extra:
+                        opciones_extra = abogados_list[:]  # fallback
+
                     for i in range(int(num_abogados) - 1):
                         abogados_extra.append(
                             st.selectbox(
                                 f"Abogado adicional #{i+1}",
-                                abogados_list,
+                                opciones_extra,
                                 key=f"cas_new_ab_extra_{i}"
                             )
                         )
@@ -1374,9 +1392,9 @@ if menu == "Casos":
                     "EstadoCaso": estado,
                     "FechaInicio": str(fi),
 
-                    # ✅ NUEVOS CAMPOS (no borran los existentes)
+                    # ✅ NUEVOS CAMPOS
                     "DefensaConjunta": "1" if defensa_conjunta else "0",
-                    "NumAbogados": int(num_abogados),
+                    "NumAbogados": int(num_abogados) if defensa_conjunta else 1,
                     "AbogadosExtra": " | ".join([a for a in abogados_extra if str(a).strip() != ""])
                 }, "casos")
 
@@ -1409,7 +1427,6 @@ if menu == "Casos":
                 key="cas_edit_abogado"
             )
 
-            # ✅ DEFENSA CONJUNTA (editar)
             defconj_val = str(fila.get("DefensaConjunta","0")) == "1"
             defensa_conjunta = st.checkbox("✅ DEFENSA CONJUNTA (más abogados)", value=defconj_val, key="cas_edit_defconj")
 
@@ -1428,14 +1445,18 @@ if menu == "Casos":
                     step=1,
                     key="cas_edit_numab"
                 )
-                st.caption("Selecciona los abogados adicionales (además del principal).")
+                st.markdown("### 👥 Abogados adicionales")
+                opciones_extra = [a for a in abogados_list if a != abogado]
+                if not opciones_extra:
+                    opciones_extra = abogados_list[:]
+
                 for i in range(int(num_abogados) - 1):
-                    default = extras_list_prev[i] if i < len(extras_list_prev) else (abogados_list[0] if abogados_list else "")
-                    idx_def = abogados_list.index(default) if default in abogados_list else 0
+                    default = extras_list_prev[i] if i < len(extras_list_prev) else (opciones_extra[0] if opciones_extra else "")
+                    idx_def = opciones_extra.index(default) if default in opciones_extra else 0
                     abogados_extra.append(
                         st.selectbox(
                             f"Abogado adicional #{i+1}",
-                            abogados_list,
+                            opciones_extra,
                             index=idx_def,
                             key=f"cas_edit_ab_extra_{i}"
                         )
@@ -1471,15 +1492,12 @@ if menu == "Casos":
             df_casos.loc[idx, [
                 "Cliente","Abogado","Año","Materia","Instancia","Pretension",
                 "Juzgado","DistritoJudicial","Contraparte","ContraparteDoc","Observaciones","EstadoCaso",
-
-                # ✅ NUEVOS CAMPOS
                 "DefensaConjunta","NumAbogados","AbogadosExtra"
             ]] = [
                 cliente, abogado, anio, materia, instancia, pret,
                 juzgado, distrito_jud, contraparte, contraparte_doc, obs, estado,
-
                 "1" if defensa_conjunta else "0",
-                int(num_abogados),
+                int(num_abogados) if defensa_conjunta else 1,
                 " | ".join([a for a in abogados_extra if str(a).strip() != ""])
             ]
 
