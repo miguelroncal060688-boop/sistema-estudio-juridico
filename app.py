@@ -3547,13 +3547,14 @@ def generar_docx(texto: str, titulo="Contrato"):
     buffer.seek(0)
     return buffer
 # ==========================================================
-# REPOSITORIO CONTRATOS – Borrador/Firmado + Numeración oficial
+# REPOSITORIO CONTRATOS – Borrador/Firmado + Numeración oficial + Vigente/Histórico + Versionado/Historial
 # ==========================================================
 
 REPO_CONTRATOS_FILE = os.path.join(DATA_DIR, 'repo_contratos.csv')
 REPO_CONTRATOS_SCHEMA = [
     'ID','Archivo','Ruta','Extension','Expediente','Cliente','Abogado','NombreContrato',
-    'Estado','Numero','Año','Sigla','FechaCreado','FechaFirmado','Notas','Hash','Existe','Visible'
+    'Estado','Numero','Año','Sigla','FechaCreado','FechaFirmado','Notas','Hash','Existe','Visible',
+    'Version','Historial','CategoriaContrato'
 ]
 
 # -------------------------
@@ -3579,6 +3580,14 @@ def _repo_get_idx(repo: pd.DataFrame, sel_id):
     idxs = repo.index[repo['ID'].astype(str) == str(sel_id)].tolist()
     return idxs[0] if idxs else None
 
+def _repo_append_hist(old: str, msg: str) -> str:
+    base = (old or "").strip()
+    return (base + "\n" + msg) if base else msg
+
+def _repo_norm_cat(x: str) -> str:
+    x = str(x or "").strip()
+    return x if x in ["Vigente","Histórico"] else "Histórico"
+
 # -------------------------
 # IO
 # -------------------------
@@ -3586,18 +3595,32 @@ def _repo_contratos_ensure():
     if not os.path.exists(REPO_CONTRATOS_FILE):
         pd.DataFrame(columns=REPO_CONTRATOS_SCHEMA).to_csv(REPO_CONTRATOS_FILE, index=False)
         return
+
     try:
         df = pd.read_csv(REPO_CONTRATOS_FILE)
     except Exception:
         df = pd.DataFrame(columns=REPO_CONTRATOS_SCHEMA)
+
     df = drop_unnamed(df)
+
     for c in REPO_CONTRATOS_SCHEMA:
         if c not in df.columns:
             df[c] = ''
+
     if 'Visible' not in df.columns:
         df['Visible'] = '1'
+    if 'Version' not in df.columns:
+        df['Version'] = 1
+    if 'Historial' not in df.columns:
+        df['Historial'] = ''
+    if 'CategoriaContrato' not in df.columns:
+        df['CategoriaContrato'] = 'Histórico'
+
     df = df.reindex(columns=REPO_CONTRATOS_SCHEMA)
     df = _repo_fix_ids(df)
+    df['Version'] = pd.to_numeric(df.get('Version', 1), errors='coerce').fillna(1).astype(int)
+    df['CategoriaContrato'] = df.get('CategoriaContrato','Histórico').apply(_repo_norm_cat)
+
     df.to_csv(REPO_CONTRATOS_FILE, index=False)
 
 def _repo_contratos_load():
@@ -3606,28 +3629,54 @@ def _repo_contratos_load():
         df = pd.read_csv(REPO_CONTRATOS_FILE)
     except Exception:
         df = pd.DataFrame(columns=REPO_CONTRATOS_SCHEMA)
+
     df = drop_unnamed(df)
+
     for c in REPO_CONTRATOS_SCHEMA:
         if c not in df.columns:
             df[c] = ''
+
     if 'Visible' not in df.columns:
         df['Visible'] = '1'
+    if 'Version' not in df.columns:
+        df['Version'] = 1
+    if 'Historial' not in df.columns:
+        df['Historial'] = ''
+    if 'CategoriaContrato' not in df.columns:
+        df['CategoriaContrato'] = 'Histórico'
+
     df = df.reindex(columns=REPO_CONTRATOS_SCHEMA)
-    return _repo_fix_ids(df)
+    df = _repo_fix_ids(df)
+    df['Version'] = pd.to_numeric(df.get('Version', 1), errors='coerce').fillna(1).astype(int)
+    df['CategoriaContrato'] = df.get('CategoriaContrato','Histórico').apply(_repo_norm_cat)
+
+    return df
 
 def _repo_contratos_save(df):
     try:
         backup_file(REPO_CONTRATOS_FILE)
     except Exception:
         pass
+
     df = drop_unnamed(df)
     for c in REPO_CONTRATOS_SCHEMA:
         if c not in df.columns:
             df[c] = ''
+
     if 'Visible' not in df.columns:
         df['Visible'] = '1'
+    if 'Version' not in df.columns:
+        df['Version'] = 1
+    if 'Historial' not in df.columns:
+        df['Historial'] = ''
+    if 'CategoriaContrato' not in df.columns:
+        df['CategoriaContrato'] = 'Histórico'
+
     df = df.reindex(columns=REPO_CONTRATOS_SCHEMA)
     df = _repo_fix_ids(df)
+    df['Version'] = pd.to_numeric(df.get('Version', 1), errors='coerce').fillna(1).astype(int)
+    df['CategoriaContrato'] = df.get('CategoriaContrato','Histórico').apply(_repo_norm_cat)
+
     df.to_csv(REPO_CONTRATOS_FILE, index=False)
 
 # -------------------------
@@ -3652,8 +3701,10 @@ def _repo_scan_generados():
         path = os.path.join(GENERADOS_DIR, fn)
         if not os.path.isfile(path):
             continue
+
         ext = os.path.splitext(fn)[1].lower().replace('.','').upper()
         nombre, expediente = fn, ''
+
         if '_BORRADOR_' in fn:
             nombre = fn.split('_BORRADOR_')[0].replace('_',' ')
             expediente = fn.split('_BORRADOR_')[-1].split('.')[0].replace('__','_')
@@ -3685,33 +3736,65 @@ def _repo_sync_contratos():
     scanned = _repo_scan_generados()
     scanned_by = {r['Archivo']: r for r in scanned}
 
+    # Actualiza existentes y versiona si cambió el hash
     if not repo.empty:
         repo['Existe'] = '0'
         for i in repo.index:
             fn = str(repo.at[i,'Archivo'])
             if fn in scanned_by:
                 repo.at[i,'Existe'] = '1'
+
+                old_hash = str(repo.at[i,'Hash'])
+                new_hash = str(scanned_by[fn].get('Hash',''))
+
+                if old_hash and new_hash and old_hash != new_hash:
+                    old_ver = pd.to_numeric(repo.at[i,'Version'], errors='coerce')
+                    old_ver = 1 if pd.isna(old_ver) else int(old_ver)
+                    new_ver = old_ver + 1
+                    repo.at[i,'Version'] = new_ver
+
+                    stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    msg = f"[{stamp}] Versión {new_ver} (cambio de archivo)"
+                    repo.at[i,'Historial'] = _repo_append_hist(str(repo.at[i,'Historial']), msg)
+
                 for k in ['Ruta','Extension','Hash','FechaCreado','Cliente','Abogado','Expediente','NombreContrato']:
                     repo.at[i,k] = scanned_by[fn].get(k, repo.at[i,k])
 
     existing = set(repo['Archivo'].astype(str).tolist()) if not repo.empty else set()
 
-    # ✅ FIX ROBUSTO: evita ValueError cuando max es NaN
+    # ✅ FIX ROBUSTO: evita ValueError si max es NaN
     ids = pd.to_numeric(repo.get('ID', pd.Series(dtype='float')), errors='coerce')
     max_id = ids.dropna().max()
     max_id = 0 if pd.isna(max_id) else int(max_id)
     nid = max_id + 1
 
+    # Nuevos siempre entran como HISTÓRICO (Opción C)
     new_rows = []
     for r in scanned:
         if r['Archivo'] not in existing:
+            stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             new_rows.append({
-                'ID': nid,'Archivo': r['Archivo'],'Ruta': r['Ruta'],'Extension': r['Extension'],
-                'Expediente': r.get('Expediente',''),'Cliente': r.get('Cliente',''),'Abogado': r.get('Abogado',''),
-                'NombreContrato': r.get('NombreContrato','Contrato'),'Estado': 'Borrador',
-                'Numero': '','Año': '','Sigla': 'CLS','FechaCreado': r.get('FechaCreado',''),
-                'FechaFirmado': '','Notas': '','Hash': r.get('Hash',''),
-                'Existe': '1','Visible': '1'
+                'ID': nid,
+                'Archivo': r['Archivo'],
+                'Ruta': r['Ruta'],
+                'Extension': r['Extension'],
+                'Expediente': r.get('Expediente',''),
+                'Cliente': r.get('Cliente',''),
+                'Abogado': r.get('Abogado',''),
+                'NombreContrato': r.get('NombreContrato','Contrato'),
+                'Estado': 'Borrador',
+                'Numero': '',
+                'Año': '',
+                'Sigla': 'CLS',
+                'FechaCreado': r.get('FechaCreado',''),
+                'FechaFirmado': '',
+                'Notas': '',
+                'Hash': r.get('Hash',''),
+                'Existe': '1',
+                'Visible': '1',
+                'Version': 1,
+                'Historial': f"[{stamp}] Creado (sincronizado desde generados/)",
+                'CategoriaContrato': 'Histórico'
             })
             nid += 1
 
@@ -3721,19 +3804,20 @@ def _repo_sync_contratos():
     for c in REPO_CONTRATOS_SCHEMA:
         if c not in repo.columns:
             repo[c] = ''
+
     repo = repo.reindex(columns=REPO_CONTRATOS_SCHEMA)
     _repo_contratos_save(repo)
     return repo
 
 # =========================
-# UI del repositorio (CON BOTONES + RESET TOTAL)
+# UI del repositorio (CON BOTONES + RESET TOTAL + DETALLE POR CASO)
 # =========================
 if 'menu' in globals() and menu == 'Repositorio Contratos':
     st.subheader('📦 Repositorio de Contratos')
 
     is_admin = st.session_state.get('rol') == 'admin'
 
-    # ====== Barra superior: Sincronizar / Exportar / Reset total ======
+    # ===== Barra superior =====
     col1, col2, col3 = st.columns([1, 1, 1])
 
     with col1:
@@ -3751,29 +3835,22 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
         )
 
     with col3:
-        # ✅ Reset SOLO para ADMIN
         if is_admin:
-            with st.expander("⚠️ Reset total del repositorio", expanded=False):
+            with st.expander("⚠️ Reset total del repositorio (solo ADMIN)", expanded=False):
                 st.warning("Esto borra: 1) repo_contratos.csv y 2) TODOS los archivos dentro de generados/.")
                 confirm = st.checkbox("Entiendo el riesgo y deseo borrar todo", key="rc_reset_confirm")
                 confirm2 = st.text_input("Escribe BORRAR para confirmar", value="", key="rc_reset_confirm2")
-
-                if st.button(
-                    "🧨 BORRAR TODO DEFINITIVAMENTE",
-                    key="rc_reset_btn",
-                    disabled=(not confirm) or (confirm2.strip().upper() != "BORRAR")
-                ):
+                if st.button("🧨 BORRAR TODO DEFINITIVAMENTE", key="rc_reset_btn",
+                             disabled=(not confirm) or (confirm2.strip().upper() != "BORRAR")):
                     try:
                         if os.path.exists(REPO_CONTRATOS_FILE):
                             os.remove(REPO_CONTRATOS_FILE)
-
                         if os.path.exists(GENERADOS_DIR):
                             for fn in os.listdir(GENERADOS_DIR):
                                 try:
                                     os.remove(os.path.join(GENERADOS_DIR, fn))
                                 except Exception:
                                     pass
-
                         st.success("✅ Repositorio y generados/ eliminados por completo")
                         st.rerun()
                     except Exception as e:
@@ -3781,26 +3858,36 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
         else:
             st.write("")
 
-    # ====== Cuerpo del repositorio ======
     repo = _repo_contratos_load()
     if repo.empty:
         st.info('No hay contratos aún. Guarda un borrador y sincroniza.')
     else:
-        f1, f2, f3 = st.columns([1, 1, 2])
+        # ===== Filtros + categoría =====
+        f1, f2, f3, f4 = st.columns([1, 1, 1, 2])
         with f1:
             est = st.selectbox('Estado', ['Todos', 'Borrador', 'Firmado'], key='rc_estado')
         with f2:
             vis = st.selectbox('Visibilidad', ['Incluye ocultos', 'Solo visibles', 'Solo ocultos'], index=0, key='rc_vis')
         with f3:
+            cat = st.selectbox('Categoría', ['Solo vigentes','Solo históricos','Todos'], index=0, key='rc_cat')
+        with f4:
             q = st.text_input('Buscar', key='rc_buscar').strip().lower()
 
         view = repo.copy()
+
         if vis == 'Solo visibles':
             view = view[view['Visible'].astype(str) == '1']
         elif vis == 'Solo ocultos':
             view = view[view['Visible'].astype(str) != '1']
+
         if est != 'Todos':
             view = view[view['Estado'].astype(str) == est]
+
+        if cat == 'Solo vigentes':
+            view = view[view['CategoriaContrato'].astype(str) == 'Vigente']
+        elif cat == 'Solo históricos':
+            view = view[view['CategoriaContrato'].astype(str) != 'Vigente']
+
         if q:
             mask = (
                 view['Archivo'].astype(str).str.lower().str.contains(q, na=False) |
@@ -3812,18 +3899,31 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
             view = view[mask]
 
         st.dataframe(
-            view[['ID','Archivo','Expediente','Cliente','Abogado','NombreContrato','Estado','Numero','Año','Sigla','Existe','Visible']],
+            view[['ID','Archivo','Expediente','Cliente','Abogado','NombreContrato','Estado','Numero','Año','Sigla','CategoriaContrato','Version','Existe','Visible']],
             use_container_width=True
         )
+
+        # ===== Detalle por expediente =====
+        st.divider()
+        st.markdown("## 🔎 Detalle / Visualización por caso (expediente)")
+        exp_opts = sorted([e for e in repo['Expediente'].astype(str).unique().tolist() if str(e).strip() != ""])
+        if exp_opts:
+            exp_sel = st.selectbox("Expediente", exp_opts, key="rc_exp_det")
+            det = repo[repo['Expediente'].astype(str) == str(exp_sel)].copy()
+            det.sort_values(['CategoriaContrato','Estado','Version'], inplace=True, ascending=[True, True, False], errors='ignore')
+            st.dataframe(det[['ID','Archivo','Estado','CategoriaContrato','Version','FechaCreado','FechaFirmado','Visible']], use_container_width=True)
+        else:
+            st.info("Aún no hay expedientes detectados en el repositorio.")
+
+        st.divider()
 
         if view.empty:
             st.info('No hay resultados con esos filtros.')
         else:
-            # selector con etiqueta clara
             view2 = view.copy()
             view2['ID'] = pd.to_numeric(view2['ID'], errors='coerce').fillna(0).astype(int)
             view2['_label'] = view2.apply(
-                lambda r: f"ID {r['ID']} – {r.get('NombreContrato','')} – {r.get('Expediente','')} – {r.get('Estado','')}",
+                lambda r: f"ID {r['ID']} – {r.get('NombreContrato','')} – {r.get('Expediente','')} – {r.get('Estado','')} – {r.get('CategoriaContrato','Histórico')} – v{r.get('Version',1)}",
                 axis=1
             )
 
@@ -3832,26 +3932,74 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
 
             row = repo[repo['ID'].astype(str) == str(sel_id)].iloc[0]
 
-            notas = st.text_area('Notas', value=str(row.get('Notas','')), height=90, key='rc_notas')
+            st.markdown(f"**Versión:** {int(pd.to_numeric(row.get('Version',1), errors='coerce') or 1)}")
+            with st.expander("📜 Historial", expanded=False):
+                st.text_area("Historial", value=str(row.get('Historial','')), height=160, key='rc_hist')
+
+            notas = st.text_area('Notas / Observaciones', value=str(row.get('Notas','')), height=90, key='rc_notas')
             sigla = st.text_input('Sigla', value=str(row.get('Sigla','CLS')), key='rc_sigla')
 
-            # Guardar notas (permitido a admin/abogado; aquí solo admin por seguridad)
+            # ----- Editar metadatos (solo ADMIN) -----
+            with st.expander("✏️ Editar metadatos (solo ADMIN)", expanded=False):
+                if not is_admin:
+                    st.info("Solo ADMIN puede editar metadatos.")
+                else:
+                    nombre_e = st.text_input("NombreContrato", value=str(row.get('NombreContrato','')), key='rc_edit_nombre')
+                    expediente_e = st.text_input("Expediente", value=str(row.get('Expediente','')), key='rc_edit_exp')
+                    cliente_e = st.text_input("Cliente", value=str(row.get('Cliente','')), key='rc_edit_cli')
+                    abogado_e = st.text_input("Abogado", value=str(row.get('Abogado','')), key='rc_edit_ab')
+                    cat_e = st.selectbox("Categoría", ["Vigente","Histórico"], index=0 if str(row.get('CategoriaContrato'))=="Vigente" else 1, key='rc_edit_cat')
+                    estado_e = st.selectbox("Estado", ["Borrador","Firmado"], index=0 if str(row.get('Estado'))!="Firmado" else 1, key='rc_edit_estado')
+
+                    if st.button("💾 Guardar metadatos", key="rc_save_meta"):
+                        repo2 = _repo_contratos_load()
+                        i2 = _repo_get_idx(repo2, sel_id)
+                        if i2 is not None:
+                            repo2.at[i2,'NombreContrato'] = nombre_e
+                            repo2.at[i2,'Expediente'] = expediente_e
+                            repo2.at[i2,'Cliente'] = cliente_e
+                            repo2.at[i2,'Abogado'] = abogado_e
+                            repo2.at[i2,'CategoriaContrato'] = cat_e
+                            repo2.at[i2,'Estado'] = estado_e
+                            repo2.at[i2,'Sigla'] = sigla
+                            repo2.at[i2,'Notas'] = notas
+                            _repo_contratos_save(repo2)
+                            st.success("✅ Metadatos guardados")
+                            st.rerun()
+
+            # Guardar notas rápido (solo admin)
             idx = _repo_get_idx(repo, sel_id)
             if idx is not None and is_admin:
                 repo.at[idx, 'Notas'] = notas
+                repo.at[idx, 'Sigla'] = sigla
                 _repo_contratos_save(repo)
 
-            # ====== Botones (solo ADMIN) ======
-            b1, b2, b3 = st.columns(3)
+            # ===== Botones (solo ADMIN) =====
+            b1, b2, b3, b4 = st.columns(4)
 
             with b1:
-                if st.button('✅ Marcar FIRMADO (asigna N°)', key='rc_firmar_btn', disabled=not is_admin):
+                if st.button('✅ Firmar (asigna N° y vuelve Vigente)', key='rc_firmar_btn', disabled=not is_admin):
                     repo2 = _repo_contratos_load()
                     idx2 = _repo_get_idx(repo2, sel_id)
                     if idx2 is not None:
                         repo2.at[idx2, 'Notas'] = notas
+                        repo2.at[idx2, 'Sigla'] = sigla
                     repo2 = _repo_firmar(repo2, sel_id, sigla)
-                    st.success('✅ Firmado y numerado')
+
+                    # Opción C: al firmar -> este contrato Vigente, otros del mismo expediente Histórico
+                    try:
+                        idx2 = _repo_get_idx(repo2, sel_id)
+                        exp_of = str(repo2.at[idx2,'Expediente'])
+                        same = repo2['Expediente'].astype(str) == exp_of
+                        repo2.loc[same, 'CategoriaContrato'] = 'Histórico'
+                        repo2.at[idx2, 'CategoriaContrato'] = 'Vigente'
+                        stamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        repo2.at[idx2, 'Historial'] = _repo_append_hist(str(repo2.at[idx2,'Historial']), f"[{stamp}] Marcado como VIGENTE (firmado)")
+                        _repo_contratos_save(repo2)
+                    except Exception:
+                        pass
+
+                    st.success('✅ Firmado, numerado y marcado como Vigente')
                     st.rerun()
 
             with b2:
@@ -3860,13 +4008,14 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                     idx2 = _repo_get_idx(repo2, sel_id)
                     if idx2 is not None:
                         repo2.at[idx2, 'Notas'] = notas
+                        repo2.at[idx2, 'Sigla'] = sigla
                     repo2 = _repo_borrador(repo2, sel_id)
                     st.success('✅ Marcado como borrador')
                     st.rerun()
 
             with b3:
                 if str(row.get('Visible','1')) == '1':
-                    if st.button('🗑️ Quitar del repositorio', key='rc_quitar_btn', disabled=not is_admin):
+                    if st.button('🗑️ Quitar', key='rc_quitar_btn', disabled=not is_admin):
                         repo2 = _repo_contratos_load()
                         repo2 = _repo_quitar(repo2, sel_id)
                         st.success('✅ Quitado (no revive)')
@@ -3878,10 +4027,59 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                         st.success('✅ Restaurado')
                         st.rerun()
 
+            with b4:
+                if st.button('🗑️ Eliminar (CSV y opcional archivo)', key='rc_del_btn', disabled=not is_admin):
+                    st.session_state['rc_del_mode'] = True
+
+            if is_admin and st.session_state.get('rc_del_mode', False):
+                st.warning("⚠️ Eliminar contrato del repositorio (irreversible).")
+                del_confirm = st.text_input("Escribe ELIMINAR para confirmar", key="rc_del_confirm")
+                del_file = st.checkbox("Borrar también el archivo físico en generados/", value=False, key="rc_del_file")
+
+                if st.button("✅ Confirmar eliminación", key="rc_del_do", disabled=del_confirm.strip().upper() != "ELIMINAR"):
+                    repo2 = _repo_contratos_load()
+                    idx2 = _repo_get_idx(repo2, sel_id)
+                    ruta_del = ""
+                    if idx2 is not None:
+                        ruta_del = str(repo2.at[idx2,'Ruta'])
+                    repo2 = repo2[repo2['ID'].astype(str) != str(sel_id)].copy()
+                    _repo_contratos_save(repo2)
+
+                    if del_file and ruta_del and os.path.exists(ruta_del):
+                        try:
+                            os.remove(ruta_del)
+                        except Exception:
+                            pass
+                        # también borrar docx paralelo si existe
+                        if ruta_del.lower().endswith(".txt"):
+                            docx_path = ruta_del[:-4] + ".docx"
+                            if os.path.exists(docx_path):
+                                try:
+                                    os.remove(docx_path)
+                                except Exception:
+                                    pass
+
+                    st.session_state['rc_del_mode'] = False
+                    st.success("✅ Eliminado")
+                    st.rerun()
+
+            # ===== Descarga + Vista previa =====
             st.divider()
             ruta = str(row.get('Ruta',''))
             if str(row.get('Existe','')) == '1' and ruta and os.path.exists(ruta):
                 ext = os.path.splitext(ruta)[1].lower()
+
+                # Vista previa si es TXT
+                if ext == '.txt':
+                    try:
+                        with open(ruta, 'r', encoding='utf-8', errors='ignore') as f:
+                            txt_prev = f.read()
+                        with st.expander("👁️ Vista previa del contrato (TXT)", expanded=False):
+                            st.text_area("Contenido", value=txt_prev, height=260, key="rc_preview_txt")
+                    except Exception:
+                        pass
+
+                # Descargar archivo actual
                 mime = 'text/plain' if ext == '.txt' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 with open(ruta, 'rb') as f:
                     data = f.read()
@@ -3894,7 +4092,7 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                     key=f'rc_dl_{sel_id}'
                 )
 
-                # ✅ Si el seleccionado es .txt, ofrecer también el .docx paralelo si existe
+                # Si es .txt, ofrecer .docx paralelo si existe
                 if ext == '.txt':
                     docx_path = ruta[:-4] + '.docx'
                     if os.path.exists(docx_path):
