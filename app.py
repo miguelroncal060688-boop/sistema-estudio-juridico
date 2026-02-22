@@ -29,6 +29,109 @@ def save_df(nombre, df):
 
 def normalize_key(x):
     return str(x).strip().upper()
+
+# ==========================================================
+# BLOQUE A — VISIBILIDAD POR ROL (CASOS)
+# ==========================================================
+def _rol_actual():
+    return str(st.session_state.get("rol","")).strip().lower()
+
+def _usuario_actual():
+    return str(
+        st.session_state.get("usuario")
+        or st.session_state.get("Usuario")
+        or st.session_state.get("user")
+        or ""
+    ).strip()
+
+def _nombre_abogado_del_usuario():
+    """
+    Devuelve el NOMBRE del abogado asociado al usuario (si rol=Abogado),
+    usando usuarios.AbogadoID -> abogados.ID -> abogados.Nombre
+    """
+    try:
+        usuario = _usuario_actual()
+        if not usuario:
+            return ""
+
+        df_u = load_df("usuarios")
+        if df_u.empty or "Usuario" not in df_u.columns:
+            return ""
+
+        fila = df_u[df_u["Usuario"].astype(str) == usuario]
+        if fila.empty:
+            return ""
+
+        abogado_id = str(fila.iloc[0].get("AbogadoID","")).strip()
+        if not abogado_id:
+            return ""
+
+        df_a = load_df("abogados")
+        if df_a.empty or "ID" not in df_a.columns:
+            return ""
+
+        match = df_a[df_a["ID"].astype(str) == abogado_id]
+        if match.empty:
+            return ""
+
+        if "Nombre" in match.columns:
+            return str(match.iloc[0]["Nombre"]).strip()
+
+        return ""
+    except Exception:
+        return ""
+
+def filtrar_casos_por_rol(df_casos):
+    """
+    Reglas:
+    - Admin / Personal Administrativo: ve todo
+    - Abogado: ve casos donde:
+        * es Abogado principal
+        * está en AbogadosExtra (defensa conjunta)
+        * está en Delegados
+    - Secretaria/o / Asistente: solo casos Delegados
+    """
+    if df_casos is None or df_casos.empty:
+        return df_casos
+
+    rol = _rol_actual()
+    usuario = _usuario_actual()
+
+    # Roles con vista total
+    if rol in ["admin", "personal administrativo"]:
+        return df_casos
+
+    df = df_casos.copy()
+
+    for col in ["Abogado", "AbogadosExtra", "Delegados"]:
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].astype(str)
+
+    # Abogado
+    if rol == "abogado":
+        nombre_abogado = _nombre_abogado_del_usuario()
+
+        m_deleg = df["Delegados"].str.contains(usuario, case=False, na=False) if usuario else False
+
+        if nombre_abogado:
+            m1 = df["Abogado"].str.contains(nombre_abogado, case=False, na=False)
+            m2 = df["AbogadosExtra"].str.contains(nombre_abogado, case=False, na=False)
+            return df[m1 | m2 | m_deleg].copy()
+
+        return df[m_deleg].copy() if isinstance(m_deleg, pd.Series) else df.iloc[0:0].copy()
+
+    # Secretaria / Asistente
+    if rol in ["secretaria", "secretaria/o", "asistente"]:
+        if not usuario:
+            return df.iloc[0:0].copy()
+        return df[df["Delegados"].str.contains(usuario, case=False, na=False)].copy()
+
+    # Otros roles: conservador
+    if not usuario:
+        return df.iloc[0:0].copy()
+    return df[df["Delegados"].str.contains(usuario, case=False, na=False)].copy()
+
 # ==========================================================
 # MARCA 004 – VERSIÓN ESTABLE OPERATIVA
 # Estado: FUNCIONA TODO – NO MODIFICAR NI REDUCIR
