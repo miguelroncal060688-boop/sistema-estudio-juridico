@@ -3414,12 +3414,13 @@ if menu == "Usuarios":
         st.info("Solo Admin puede editar la matriz de permisos. Puedes ver usuarios, pero no cambiar permisos.")
 
     # =========================
-    # ABOGADOS DISPONIBLES (solo lectura)
+    # ABOGADOS DISPONIBLES (garantiza ID + evita default ID 1)
     # =========================
     df_ab = load_df("abogados")
     if df_ab is None:
         df_ab = pd.DataFrame()
 
+    # normalizar Nombre si viene con otro nombre
     if not df_ab.empty and "Nombre" not in df_ab.columns:
         for alt in ["NOMBRE", "Nombre completo", "NombreCompleto"]:
             if alt in df_ab.columns:
@@ -3428,20 +3429,40 @@ if menu == "Usuarios":
     if "Nombre" not in df_ab.columns:
         df_ab["Nombre"] = ""
 
-    # Preferimos ID si existe; si no, usamos Nombre como clave
-    if (not df_ab.empty) and ("ID" in df_ab.columns) and df_ab["ID"].astype(str).str.strip().ne("").any():
-        key_col = "ID"
-    else:
-        key_col = "Nombre"
+    # asegurar ID y autogenerarlo si falta/vacío
+    if not df_ab.empty:
+        if "ID" not in df_ab.columns:
+            df_ab["ID"] = ""
 
-    if key_col in df_ab.columns:
-        df_ab[key_col] = df_ab[key_col].astype(str).str.strip()
-    df_ab["Nombre"] = df_ab["Nombre"].astype(str).str.strip()
+        ids_num = pd.to_numeric(df_ab["ID"], errors="coerce")
+        max_id = int(ids_num.dropna().max()) if ids_num.notna().any() else 0
 
-    df_ab2 = df_ab.copy()
-    df_ab2 = df_ab2[(df_ab2["Nombre"] != "") & (df_ab2.get(key_col, "").astype(str).str.strip() != "")]
-    abogado_opts = df_ab2[key_col].astype(str).tolist() if (not df_ab2.empty and key_col in df_ab2.columns) else []
-    abogado_label = {str(r[key_col]).strip(): str(r["Nombre"]).strip() for _, r in df_ab2.iterrows()}
+        bad = ids_num.isna() | (ids_num <= 0)
+        for i in df_ab.index[bad].tolist():
+            max_id += 1
+            df_ab.at[i, "ID"] = max_id
+
+        df_ab["ID"] = pd.to_numeric(df_ab["ID"], errors="coerce").fillna(0).astype(int)
+        df_ab["Nombre"] = df_ab["Nombre"].astype(str).str.strip()
+
+        # guardar IDs estables
+        save_df("abogados", df_ab)
+
+    abogado_opts = []
+    abogado_label = {}
+    if not df_ab.empty and "ID" in df_ab.columns:
+        tmp = df_ab.copy()
+        tmp["ID"] = pd.to_numeric(tmp["ID"], errors="coerce").fillna(0).astype(int)
+        tmp["Nombre"] = tmp["Nombre"].astype(str).str.strip()
+        tmp = tmp[(tmp["ID"] > 0) & (tmp["Nombre"] != "")]
+        abogado_opts = tmp["ID"].astype(str).tolist()
+        abogado_label = {str(r["ID"]): str(r["Nombre"]) for _, r in tmp.iterrows()}
+
+    def _fmt_abogado(x):
+        x = str(x)
+        if x == "":
+            return "— Seleccione abogado —"
+        return f"{abogado_label.get(x,'')} (ID {x})"
 
     # =========================
     # GESTIÓN DE USUARIOS
@@ -3469,19 +3490,18 @@ if menu == "Usuarios":
                 st.markdown("### 👨‍⚖️ Abogado asociado (obligatorio)")
                 if not abogado_opts:
                     st.error("❌ No hay abogados registrados para asociar. Registra abogados primero.")
-                else:
-                    abogado_id = st.selectbox(
-                        "Selecciona abogado",
-                        options=abogado_opts,
-                        format_func=lambda x: f"{abogado_label.get(str(x),'')} ({key_col} {x})",
-                        key="usr_new_abogado"
-                    )
+                # ✅ placeholder para evitar asignación automática al primero
+                abogado_id = st.selectbox(
+                    "Selecciona abogado",
+                    options=[""] + abogado_opts,
+                    format_func=_fmt_abogado,
+                    key="usr_new_abogado"
+                )
             else:
                 st.markdown("### 👤 Datos personales")
                 nombre_completo = st.text_input("Nombre completo", key="usr_new_nombre")
                 dni_personal = st.text_input("DNI", key="usr_new_dni")
 
-            # si rol=abogado y no hay abogados, deshabilitar submit
             disabled_submit = (rol == "Abogado" and not abogado_opts)
             submit = st.form_submit_button("Crear usuario", disabled=disabled_submit)
 
@@ -3498,6 +3518,8 @@ if menu == "Usuarios":
                 if pwd != pwd2:
                     st.error("Las contraseñas no coinciden.")
                     st.stop()
+
+                # ✅ CRUCIAL: abogado antes de guardar, y debe ser distinto a placeholder ""
                 if rol == "Abogado" and not str(abogado_id).strip():
                     st.error("Debes seleccionar un abogado asociado (obligatorio).")
                     st.stop()
@@ -3514,20 +3536,12 @@ if menu == "Usuarios":
                 }, "usuarios")
                 save_df("usuarios", usuarios)
 
-                # ✅ Mostrar con quién se vinculó y pasar a EDITAR automáticamente
                 if rol == "Abogado":
-                    st.success(f"✅ Usuario creado y asociado a: {abogado_label.get(str(abogado_id),'')} ({key_col} {abogado_id})")
+                    st.success(f"✅ Usuario creado y asociado a: {abogado_label.get(str(abogado_id),'')} (ID {abogado_id})")
                 else:
                     st.success("✅ Usuario creado")
 
-                # limpiar campos para evitar repetir "crear"
-                for k in ["usr_new_user","usr_new_pwd","usr_new_pwd2","usr_new_nombre","usr_new_dni"]:
-                    if k in st.session_state:
-                        st.session_state[k] = ""
-
-                # ir directo a Editar para "Actualizar" si se requiere
-                st.session_state["usr_acc"] = "Editar"
-                st.session_state["usr_edit_sel"] = str(usuario).strip()
+                # IMPORTANTE: NO tocamos st.session_state de widgets (evita StreamlitAPIException)
                 st.rerun()
 
     # ---------- EDITAR ----------
@@ -3543,7 +3557,6 @@ if menu == "Usuarios":
             fila = usuarios[usuarios["Usuario"].astype(str) == str(sel_user)].iloc[0]
 
             with st.form("usr_edit"):
-                # Rol primero
                 rol_new = st.selectbox(
                     "Rol",
                     ROLES_DISPONIBLES,
@@ -3552,7 +3565,12 @@ if menu == "Usuarios":
                 )
 
                 usuario_new = st.text_input("Usuario", value=str(fila.get("Usuario","")), key="usr_edit_user")
-                activo_new = st.selectbox("Activo", ["1","0"], index=0 if str(fila.get("Activo","1")) == "1" else 1, key="usr_edit_activo")
+                activo_new = st.selectbox(
+                    "Activo",
+                    ["1","0"],
+                    index=0 if str(fila.get("Activo","1")) == "1" else 1,
+                    key="usr_edit_activo"
+                )
 
                 st.markdown("### 🔑 Cambiar contraseña (opcional)")
                 new_pwd = st.text_input("Nueva contraseña", type="password", key="usr_edit_pwd")
@@ -3564,20 +3582,17 @@ if menu == "Usuarios":
 
                 if rol_new == "Abogado":
                     st.markdown("### 👨‍⚖️ Abogado asociado (obligatorio)")
+                    if abogado_id_new:
+                        st.caption(f"Actualmente asociado a: {abogado_label.get(abogado_id_new,'')} (ID {abogado_id_new})")
                     if not abogado_opts:
                         st.error("❌ No hay abogados registrados para asociar. Registra abogados primero.")
-                        abogado_id_new = ""
-                    else:
-                        if abogado_id_new:
-                            st.caption(f"Actualmente asociado a: {abogado_label.get(abogado_id_new,'')} ({key_col} {abogado_id_new})")
-                        idx_def = abogado_opts.index(abogado_id_new) if abogado_id_new in abogado_opts else 0
-                        abogado_id_new = st.selectbox(
-                            "Selecciona abogado",
-                            options=abogado_opts,
-                            index=idx_def,
-                            format_func=lambda x: f"{abogado_label.get(str(x),'')} ({key_col} {x})",
-                            key="usr_edit_abogado"
-                        )
+                    abogado_id_new = st.selectbox(
+                        "Selecciona abogado",
+                        options=[""] + abogado_opts,
+                        index=([""] + abogado_opts).index(abogado_id_new) if abogado_id_new in ([""] + abogado_opts) else 0,
+                        format_func=_fmt_abogado,
+                        key="usr_edit_abogado"
+                    )
                     nombre_new = ""
                     dni_new = ""
                 else:
@@ -3622,7 +3637,11 @@ if menu == "Usuarios":
         if usuarios.empty:
             st.info("No hay usuarios.")
         else:
-            sel_user = st.selectbox("Selecciona usuario a eliminar", usuarios["Usuario"].astype(str).tolist(), key="usr_del_sel")
+            sel_user = st.selectbox(
+                "Selecciona usuario a eliminar",
+                usuarios["Usuario"].astype(str).tolist(),
+                key="usr_del_sel"
+            )
             st.warning("⚠️ Esta acción no se puede deshacer")
             confirm = st.text_input("Escribe ELIMINAR para confirmar", key="usr_del_confirm")
             if st.button("🗑️ Eliminar usuario", key="usr_del_btn", disabled=confirm.strip().upper() != "ELIMINAR"):
@@ -3633,10 +3652,12 @@ if menu == "Usuarios":
 
     st.divider()
 
-    # Mostrar relación usuario → abogado en tabla
+    # Mostrar relación usuario→abogado
     df_show = usuarios.drop(columns=["PasswordHash"], errors="ignore").copy()
     if "AbogadoID" in df_show.columns:
-        df_show["AbogadoAsociado"] = df_show["AbogadoID"].astype(str).map(lambda x: abogado_label.get(str(x), "") if str(x).strip() else "")
+        df_show["AbogadoAsociado"] = df_show["AbogadoID"].astype(str).map(
+            lambda x: abogado_label.get(str(x), "") if str(x).strip() else ""
+        )
     st.dataframe(df_show, use_container_width=True)
 # ==========================================================
 # REPORTES (FILTRADOS POR ROL)
