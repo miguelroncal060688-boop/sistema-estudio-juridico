@@ -1280,7 +1280,8 @@ if menu == "Abogados":
  st.download_button("⬇️ Descargar abogados (CSV)", df_ab.to_csv(index=False).encode("utf-8"), "abogados.csv")
 
 # ==========================================================
-# CASOS (CRUD) — incluye datos judiciales completos + DEFENSA CONJUNTA (estable)
+# CASOS (CRUD) — datos judiciales + DEFENSA CONJUNTA + DELEGACIÓN
+# + Instancia incluye: "Por iniciar" e "Instancia Administrativa"
 # ==========================================================
 if menu == "Casos":
     st.subheader("📁 Casos")
@@ -1292,19 +1293,21 @@ if menu == "Casos":
     # ✅ Asegurar campos nuevos en el esquema (para que se guarden en CSV)
     try:
         if "casos" in SCHEMAS:
-            for extra in ["DefensaConjunta", "NumAbogados", "AbogadosExtra"]:
+            for extra in ["DefensaConjunta", "NumAbogados", "AbogadosExtra",
+                          "DelegacionActiva", "NumDelegados", "Delegados"]:
                 if extra not in SCHEMAS["casos"]:
                     SCHEMAS["casos"].append(extra)
     except Exception:
         pass
 
     # -------------------------
-    # Cargar clientes/abogados UNA sola vez + tolerar columnas antiguas
+    # Cargar clientes/abogados/usuarios UNA sola vez + tolerar columnas antiguas
     # -------------------------
     df_clientes = load_df("clientes")
     df_abogados = load_df("abogados")
+    df_usuarios = load_df("usuarios")
 
-    # Clientes: asegurar columna Nombre para usar en Casos
+    # Clientes: asegurar columna Nombre
     if df_clientes is None:
         df_clientes = pd.DataFrame()
     if not df_clientes.empty:
@@ -1342,6 +1345,21 @@ if menu == "Casos":
     )
     abogados_list = [a for a in abogados_list if a != ""]
 
+    # Usuarios delegables (usuarios activos si existe columna Activo)
+    delegables = []
+    if df_usuarios is None:
+        df_usuarios = pd.DataFrame()
+    if not df_usuarios.empty and "Usuario" in df_usuarios.columns:
+        tmpu = df_usuarios.copy()
+        if "Activo" in tmpu.columns:
+            tmpu = tmpu[tmpu["Activo"].astype(str) == "1"].copy()
+        delegables = tmpu["Usuario"].astype(str).str.strip().tolist()
+        delegables = [u for u in delegables if u != ""]
+
+    # ✅ OPCIONES PARA EL CAMPO "Instancia" DEL CASO
+    # (incluye lo que pediste sin depender de cambios globales)
+    INSTANCIA_OPTS = ["Por iniciar", "Instancia Administrativa"] + list(ETAPAS_HONORARIOS)
+
     # ----------------------------------------------------------
     # NUEVO
     # ----------------------------------------------------------
@@ -1351,19 +1369,10 @@ if menu == "Casos":
         elif not abogados_list:
             st.warning("Primero registra abogados.")
         else:
-            # ✅ CONTROLES DINÁMICOS FUERA DEL FORM: se renderizan al instante
+            # ✅ Defensa conjunta (dinámico fuera del form)
             st.markdown("### ⚖️ Defensa del caso")
-            abogado_principal_preview = st.selectbox(
-                "Abogado (principal)",
-                abogados_list,
-                key="cas_new_abogado_preview"
-            )
-
-            defensa_conjunta = st.checkbox(
-                "✅ DEFENSA CONJUNTA (permitir más abogados)",
-                value=False,
-                key="cas_new_defconj"
-            )
+            abogado_principal_preview = st.selectbox("Abogado (principal)", abogados_list, key="cas_new_abogado_preview")
+            defensa_conjunta = st.checkbox("✅ DEFENSA CONJUNTA (permitir más abogados)", value=False, key="cas_new_defconj")
 
             num_abogados = 1
             if defensa_conjunta:
@@ -1375,10 +1384,31 @@ if menu == "Casos":
 
             st.divider()
 
+            # ✅ Delegación (dinámico fuera del form)
+            st.markdown("### 🧩 Delegación del caso (asistentes / secretaria)")
+            delegacion_activa = st.checkbox("✅ Delegar este caso a otros usuarios", value=False, key="cas_new_del_act")
+
+            num_delegados = 0
+            delegados_sel = []
+            if delegacion_activa:
+                if not delegables:
+                    st.warning("No hay usuarios activos disponibles para delegar.")
+                else:
+                    num_delegados = st.number_input(
+                        "¿Cuántos delegados tendrá el caso?",
+                        min_value=1, max_value=6, value=1, step=1,
+                        key="cas_new_num_del"
+                    )
+                    for i in range(int(num_delegados)):
+                        delegados_sel.append(
+                            st.selectbox(f"Delegado #{i+1} (usuario)", delegables, key=f"cas_new_del_{i}")
+                        )
+
+            st.divider()
+
             with st.form("nuevo_caso"):
                 cliente = st.selectbox("Cliente", clientes_list, key="cas_new_cliente")
 
-                # Abogado principal (se preselecciona el de arriba)
                 abogado = st.selectbox(
                     "Abogado (principal)",
                     abogados_list,
@@ -1386,28 +1416,22 @@ if menu == "Casos":
                     key="cas_new_abogado"
                 )
 
-                # ✅ Abogados adicionales dentro del form (se habilitan según num_abogados)
                 abogados_extra = []
                 if defensa_conjunta:
                     st.markdown("### 👥 Abogados adicionales")
-                    # Evitar duplicado del principal (opcional)
-                    opciones_extra = [a for a in abogados_list if a != abogado]
-                    if not opciones_extra:
-                        opciones_extra = abogados_list[:]
-
+                    opciones_extra = [a for a in abogados_list if a != abogado] or abogados_list[:]
                     for i in range(int(num_abogados) - 1):
                         abogados_extra.append(
-                            st.selectbox(
-                                f"Abogado adicional #{i+1}",
-                                opciones_extra,
-                                key=f"cas_new_ab_extra_{i}"
-                            )
+                            st.selectbox(f"Abogado adicional #{i+1}", opciones_extra, key=f"cas_new_ab_extra_{i}")
                         )
 
                 expediente = st.text_input("Expediente", key="cas_new_exp")
                 anio = st.text_input("Año", key="cas_new_anio")
                 materia = st.text_input("Materia", key="cas_new_mat")
-                instancia = st.selectbox("Instancia", ETAPAS_HONORARIOS, key="cas_new_inst")
+
+                # ✅ AQUÍ están las opciones nuevas de Instancia
+                instancia = st.selectbox("Instancia", INSTANCIA_OPTS, key="cas_new_inst")
+
                 pret = st.text_input("Pretensión", key="cas_new_pret")
                 juzgado = st.text_input("Juzgado", key="cas_new_juz")
                 distrito_jud = st.text_input("Distrito Judicial", key="cas_new_dist")
@@ -1438,10 +1462,13 @@ if menu == "Casos":
                     "EstadoCaso": estado,
                     "FechaInicio": str(fi),
 
-                    # ✅ NUEVOS CAMPOS
                     "DefensaConjunta": "1" if defensa_conjunta else "0",
                     "NumAbogados": int(num_abogados) if defensa_conjunta else 1,
-                    "AbogadosExtra": " | ".join([a for a in abogados_extra if str(a).strip() != ""])
+                    "AbogadosExtra": " | ".join([a for a in abogados_extra if str(a).strip() != ""]),
+
+                    "DelegacionActiva": "1" if delegacion_activa else "0",
+                    "NumDelegados": int(num_delegados) if delegacion_activa else 0,
+                    "Delegados": " | ".join([d for d in delegados_sel if str(d).strip() != ""]),
                 }, "casos")
 
                 save_df("casos", df_casos)
@@ -1459,6 +1486,11 @@ if menu == "Casos":
         exp_sel = st.selectbox("Expediente", df_casos["Expediente"].tolist(), key='cas_edit_exp')
         fila = df_casos[df_casos["Expediente"] == exp_sel].iloc[0]
 
+        del_act_prev = str(fila.get("DelegacionActiva","0")) == "1"
+        num_del_prev = int(pd.to_numeric(fila.get("NumDelegados", 0), errors="coerce") or 0)
+        del_prev = str(fila.get("Delegados","") or "")
+        del_list_prev = [x.strip() for x in del_prev.split("|") if x.strip()]
+
         with st.form("edit_caso"):
             cliente = st.selectbox(
                 "Cliente",
@@ -1473,6 +1505,7 @@ if menu == "Casos":
                 key="cas_edit_abogado"
             )
 
+            # Defensa conjunta
             defconj_val = str(fila.get("DefensaConjunta","0")) == "1"
             defensa_conjunta = st.checkbox("✅ DEFENSA CONJUNTA (más abogados)", value=defconj_val, key="cas_edit_defconj")
 
@@ -1492,31 +1525,20 @@ if menu == "Casos":
                     key="cas_edit_numab"
                 )
                 st.markdown("### 👥 Abogados adicionales")
-                opciones_extra = [a for a in abogados_list if a != abogado]
-                if not opciones_extra:
-                    opciones_extra = abogados_list[:]
-
+                opciones_extra = [a for a in abogados_list if a != abogado] or abogados_list[:]
                 for i in range(int(num_abogados) - 1):
                     default = extras_list_prev[i] if i < len(extras_list_prev) else (opciones_extra[0] if opciones_extra else "")
                     idx_def = opciones_extra.index(default) if default in opciones_extra else 0
                     abogados_extra.append(
-                        st.selectbox(
-                            f"Abogado adicional #{i+1}",
-                            opciones_extra,
-                            index=idx_def,
-                            key=f"cas_edit_ab_extra_{i}"
-                        )
+                        st.selectbox(f"Abogado adicional #{i+1}", opciones_extra, index=idx_def, key=f"cas_edit_ab_extra_{i}")
                     )
-            else:
-                num_abogados = 1
-                abogados_extra = []
 
             anio = st.text_input("Año", value=str(fila.get('Año','')), key="cas_edit_anio")
             materia = st.text_input("Materia", value=str(fila.get('Materia','')), key="cas_edit_mat")
             instancia = st.selectbox(
                 "Instancia",
-                ETAPAS_HONORARIOS,
-                index=ETAPAS_HONORARIOS.index(fila.get('Instancia','')) if fila.get('Instancia','') in ETAPAS_HONORARIOS else 0,
+                INSTANCIA_OPTS,
+                index=INSTANCIA_OPTS.index(fila.get('Instancia','')) if fila.get('Instancia','') in INSTANCIA_OPTS else 0,
                 key="cas_edit_inst"
             )
             pret = st.text_input("Pretensión", value=str(fila.get('Pretension','')), key="cas_edit_pret")
@@ -1531,6 +1553,31 @@ if menu == "Casos":
                 index=["Activo","En pausa","Cerrado","Archivado"].index(fila.get('EstadoCaso','Activo')) if fila.get('EstadoCaso','Activo') in ["Activo","En pausa","Cerrado","Archivado"] else 0,
                 key="cas_edit_estado"
             )
+
+            # Delegación
+            st.markdown("### 🧩 Delegación del caso")
+            delegacion_activa = st.checkbox("✅ Delegar este caso a otros usuarios", value=del_act_prev, key="cas_edit_del_act")
+            num_delegados = 0
+            delegados_sel = []
+
+            if delegacion_activa:
+                if not delegables:
+                    st.warning("No hay usuarios activos disponibles para delegar.")
+                else:
+                    num_delegados = st.number_input(
+                        "¿Cuántos delegados tendrá el caso?",
+                        min_value=1, max_value=6,
+                        value=max(1, num_del_prev) if num_del_prev else 1,
+                        step=1,
+                        key="cas_edit_num_del"
+                    )
+                    for i in range(int(num_delegados)):
+                        default = del_list_prev[i] if i < len(del_list_prev) else delegables[0]
+                        idx_def = delegables.index(default) if default in delegables else 0
+                        delegados_sel.append(
+                            st.selectbox(f"Delegado #{i+1} (usuario)", delegables, index=idx_def, key=f"cas_edit_del_{i}")
+                        )
+
             submit = st.form_submit_button("Guardar cambios", disabled=is_readonly)
 
         if submit:
@@ -1538,13 +1585,17 @@ if menu == "Casos":
             df_casos.loc[idx, [
                 "Cliente","Abogado","Año","Materia","Instancia","Pretension",
                 "Juzgado","DistritoJudicial","Contraparte","ContraparteDoc","Observaciones","EstadoCaso",
-                "DefensaConjunta","NumAbogados","AbogadosExtra"
+                "DefensaConjunta","NumAbogados","AbogadosExtra",
+                "DelegacionActiva","NumDelegados","Delegados"
             ]] = [
                 cliente, abogado, anio, materia, instancia, pret,
                 juzgado, distrito_jud, contraparte, contraparte_doc, obs, estado,
                 "1" if defensa_conjunta else "0",
                 int(num_abogados) if defensa_conjunta else 1,
-                " | ".join([a for a in abogados_extra if str(a).strip() != ""])
+                " | ".join([a for a in abogados_extra if str(a).strip() != ""]),
+                "1" if delegacion_activa else "0",
+                int(num_delegados) if delegacion_activa else 0,
+                " | ".join([d for d in delegados_sel if str(d).strip() != ""]),
             ]
 
             save_df("casos", df_casos)
