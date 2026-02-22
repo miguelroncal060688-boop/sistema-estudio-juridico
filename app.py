@@ -1457,6 +1457,183 @@ if menu == "Abogados":
  st.download_button("⬇️ Descargar abogados (CSV)", df_ab.to_csv(index=False).encode("utf-8"), "abogados.csv")
 
 # ==========================================================
+# COLABORADORES (SOLO ADMIN)
+# ==========================================================
+if menu == "Colaboradores":
+    st.subheader("👥 Colaboradores del Estudio")
+
+    # --------------------------------------------------
+    # CARGA DE DATOS
+    # --------------------------------------------------
+    colaboradores = load_df("colaboradores")
+    if colaboradores is None or colaboradores.empty:
+        colaboradores = pd.DataFrame(columns=[
+            "ID","Nombre","DNI","Tipo","Usuario","Activo","Observaciones"
+        ])
+
+    # asegurar columnas
+    for col in ["ID","Nombre","DNI","Tipo","Usuario","Activo","Observaciones"]:
+        if col not in colaboradores.columns:
+            colaboradores[col] = ""
+
+    # --------------------------------------------------
+    # GENERAR ID AUTOMÁTICO
+    # --------------------------------------------------
+    def next_colab_id(df):
+        if df.empty:
+            return "1"
+        try:
+            return str(int(pd.to_numeric(df["ID"], errors="coerce").max()) + 1)
+        except Exception:
+            return str(len(df) + 1)
+
+    # --------------------------------------------------
+    # USUARIOS DISPONIBLES (NO ABOGADOS)
+    # --------------------------------------------------
+    usuarios_df = load_df("usuarios")
+    if usuarios_df is None:
+        usuarios_df = pd.DataFrame()
+
+    # excluir abogados
+    usuarios_no_abogado = []
+    if not usuarios_df.empty:
+        usuarios_df["Rol"] = usuarios_df["Rol"].astype(str).str.lower()
+        usuarios_no_abogado = usuarios_df[
+            usuarios_df["Rol"] != "abogado"
+        ]["Usuario"].astype(str).tolist()
+
+    # usuarios ya asignados
+    usuarios_ya_asignados = colaboradores["Usuario"].astype(str).tolist()
+
+    usuarios_disponibles = [
+        u for u in usuarios_no_abogado if u not in usuarios_ya_asignados
+    ]
+
+    # --------------------------------------------------
+    # GESTIÓN
+    # --------------------------------------------------
+    accion = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True, key="colab_acc")
+
+    # =========================
+    # NUEVO
+    # =========================
+    if accion == "Nuevo":
+        with st.form("colab_new"):
+            nombre = st.text_input("Nombre completo")
+            dni = st.text_input("DNI")
+            tipo = st.selectbox(
+                "Tipo de colaborador",
+                ["Personal Administrativo","Secretaria/o","Practicante"]
+            )
+            usuario = st.selectbox(
+                "Usuario del sistema (opcional)",
+                [""] + usuarios_disponibles
+            )
+            activo = st.selectbox("Activo", ["1","0"])
+            obs = st.text_area("Observaciones")
+
+            submit = st.form_submit_button("Guardar colaborador")
+
+            if submit:
+                if not nombre.strip():
+                    st.error("El nombre es obligatorio.")
+                    st.stop()
+
+                nuevo = {
+                    "ID": next_colab_id(colaboradores),
+                    "Nombre": nombre.strip(),
+                    "DNI": dni.strip(),
+                    "Tipo": tipo,
+                    "Usuario": usuario.strip(),
+                    "Activo": activo,
+                    "Observaciones": obs.strip(),
+                }
+
+                colaboradores = pd.concat(
+                    [colaboradores, pd.DataFrame([nuevo])],
+                    ignore_index=True
+                )
+                save_df("colaboradores", colaboradores)
+                st.success("✅ Colaborador creado")
+                st.rerun()
+
+    # =========================
+    # EDITAR
+    # =========================
+    elif accion == "Editar":
+        if colaboradores.empty:
+            st.info("No hay colaboradores.")
+        else:
+            sel = st.selectbox(
+                "Selecciona colaborador",
+                colaboradores["ID"].astype(str).tolist()
+            )
+            fila = colaboradores[colaboradores["ID"].astype(str) == str(sel)].iloc[0]
+
+            with st.form("colab_edit"):
+                nombre = st.text_input("Nombre completo", value=fila["Nombre"])
+                dni = st.text_input("DNI", value=fila["DNI"])
+                tipo = st.selectbox(
+                    "Tipo de colaborador",
+                    ["Personal Administrativo","Secretaria/o","Practicante"],
+                    index=["Personal Administrativo","Secretaria/o","Practicante"].index(fila["Tipo"])
+                )
+
+                # permitir mantener usuario actual
+                usuario_actual = str(fila["Usuario"]).strip()
+                opciones_usuario = [""] + [
+                    u for u in usuarios_no_abogado
+                    if u == usuario_actual or u not in usuarios_ya_asignados
+                ]
+
+                usuario = st.selectbox(
+                    "Usuario del sistema (opcional)",
+                    opciones_usuario,
+                    index=opciones_usuario.index(usuario_actual) if usuario_actual in opciones_usuario else 0
+                )
+
+                activo = st.selectbox("Activo", ["1","0"], index=0 if fila["Activo"]=="1" else 1)
+                obs = st.text_area("Observaciones", value=fila["Observaciones"])
+
+                submit = st.form_submit_button("Actualizar colaborador")
+
+                if submit:
+                    idx = colaboradores.index[colaboradores["ID"].astype(str) == str(sel)][0]
+                    colaboradores.at[idx,"Nombre"] = nombre.strip()
+                    colaboradores.at[idx,"DNI"] = dni.strip()
+                    colaboradores.at[idx,"Tipo"] = tipo
+                    colaboradores.at[idx,"Usuario"] = usuario.strip()
+                    colaboradores.at[idx,"Activo"] = activo
+                    colaboradores.at[idx,"Observaciones"] = obs.strip()
+
+                    save_df("colaboradores", colaboradores)
+                    st.success("✅ Colaborador actualizado")
+                    st.rerun()
+
+    # =========================
+    # ELIMINAR
+    # =========================
+    elif accion == "Eliminar":
+        if colaboradores.empty:
+            st.info("No hay colaboradores.")
+        else:
+            sel = st.selectbox(
+                "Selecciona colaborador a eliminar",
+                colaboradores["ID"].astype(str).tolist()
+            )
+            st.warning("⚠️ Esta acción no se puede deshacer")
+            confirm = st.text_input("Escribe ELIMINAR para confirmar")
+
+            if st.button("🗑️ Eliminar colaborador", disabled=confirm.strip().upper() != "ELIMINAR"):
+                colaboradores = colaboradores[colaboradores["ID"].astype(str) != str(sel)].copy()
+                save_df("colaboradores", colaboradores)
+                st.success("✅ Colaborador eliminado")
+                st.rerun()
+
+    st.divider()
+    st.dataframe(colaboradores, use_container_width=True)
+
+# ==========================================================
 # CASOS (CRUD) — datos judiciales + DEFENSA CONJUNTA + DELEGACIÓN
 # + Instancia incluye: "Por iniciar" e "Instancia Administrativa"
 # ==========================================================
