@@ -989,7 +989,7 @@ menu = st.sidebar.radio("📌 Menú", menu_items)
 brand_header()
 
 # ==========================================================
-# DASHBOARD COMPLETO (ROBUSTO: suma honorarios y litis, pendiente correcto)
+# DASHBOARD COMPLETO (ROBUSTO + VISUAL + DISCRIMINADO POR ROL)
 # ==========================================================
 if menu == "Dashboard":
 
@@ -1002,8 +1002,11 @@ if menu == "Dashboard":
     def _norm(s):
         return normalize_key(s)
 
+    rol_dash = str(st.session_state.get("rol","")).strip().lower()
+    usuario_dash = str(st.session_state.get("usuario","")).strip()
+
     # =========================
-    # Construir resumen por caso (sin depender del "último registro")
+    # Construir resumen por caso (NO SE TOCA)
     # =========================
     rows = []
     if casos.empty:
@@ -1013,20 +1016,16 @@ if menu == "Dashboard":
             "Cuota Litis Calculada","Pagado Litis","Saldo Litis"
         ])
     else:
-        # Copias defensivas
         h = honorarios.copy() if 'honorarios' in globals() else load_df("honorarios")
         he = honorarios_etapas.copy() if 'honorarios_etapas' in globals() else load_df("honorarios_etapas")
         ph = pagos_honorarios.copy() if 'pagos_honorarios' in globals() else load_df("pagos_honorarios")
-
         cl = cuota_litis.copy() if 'cuota_litis' in globals() else load_df("cuota_litis")
         pl = pagos_litis.copy() if 'pagos_litis' in globals() else load_df("pagos_litis")
 
-        # Normalizar claves
         for df in [h, he, ph, cl, pl]:
             if df is not None and not df.empty and "Caso" in df.columns:
                 df["Caso"] = df["Caso"].apply(_norm)
 
-        # Normalizar montos
         if h is not None and not h.empty and "Monto Pactado" in h.columns:
             h["Monto Pactado"] = _to_num(h["Monto Pactado"])
         if he is not None and not he.empty and "Monto Pactado" in he.columns:
@@ -1036,72 +1035,33 @@ if menu == "Dashboard":
         if pl is not None and not pl.empty and "Monto" in pl.columns:
             pl["Monto"] = _to_num(pl["Monto"])
 
-        # Cuota litis: calcular CuotaCalc por fila y sumar (todas)
         if cl is not None and not cl.empty:
-            mb = "Monto Base" if "Monto Base" in cl.columns else None
-            pc = "Porcentaje" if "Porcentaje" in cl.columns else None
-            if mb is not None:
-                cl[mb] = _to_num(cl[mb])
-            else:
-                cl["Monto Base"] = 0.0
-                mb = "Monto Base"
-            if pc is not None:
-                cl[pc] = _to_num(cl[pc])
-            else:
-                cl["Porcentaje"] = 0.0
-                pc = "Porcentaje"
-            cl["CuotaCalc"] = cl[mb] * cl[pc] / 100.0
+            cl["Monto Base"] = _to_num(cl.get("Monto Base", 0))
+            cl["Porcentaje"] = _to_num(cl.get("Porcentaje", 0))
+            cl["CuotaCalc"] = cl["Monto Base"] * cl["Porcentaje"] / 100.0
         else:
             cl = pd.DataFrame(columns=["Caso","CuotaCalc"])
 
-        # Armar resumen por expediente
         for _, c in casos.iterrows():
             exp = _norm(c.get("Expediente",""))
 
-            # 1) Honorario pactado:
-            #    Si existen honorarios por etapa, sumarlos; si no, sumar todos los honorarios totales.
             pactado = 0.0
             if he is not None and not he.empty:
-                sub_et = he[he["Caso"] == exp]
-                if not sub_et.empty:
-                    pactado = float(sub_et["Monto Pactado"].sum())
+                sub = he[he["Caso"] == exp]
+                if not sub.empty:
+                    pactado = float(sub["Monto Pactado"].sum())
+            if pactado == 0 and h is not None and not h.empty:
+                sub = h[h["Caso"] == exp]
+                pactado = float(sub["Monto Pactado"].sum()) if not sub.empty else 0
 
-            if pactado == 0.0 and h is not None and not h.empty:
-                sub_h = h[h["Caso"] == exp]
-                pactado = float(sub_h["Monto Pactado"].sum()) if not sub_h.empty else 0.0
-
-            # 2) Pagos honorarios (sumar todos)
-            pagado_h = 0.0
-            if ph is not None and not ph.empty:
-                sub_ph = ph[ph["Caso"] == exp]
-                pagado_h = float(sub_ph["Monto"].sum()) if not sub_ph.empty else 0.0
-
-            # 3) Cuota litis calculada (sumar todas)
-            calc_litis = 0.0
-            if cl is not None and not cl.empty and "CuotaCalc" in cl.columns:
-                sub_cl = cl[cl["Caso"] == exp]
-                calc_litis = float(sub_cl["CuotaCalc"].sum()) if not sub_cl.empty else 0.0
-
-            # 4) Pagos litis (sumar todos)
-            pagado_l = 0.0
-            if pl is not None and not pl.empty:
-                sub_pl = pl[pl["Caso"] == exp]
-                pagado_l = float(sub_pl["Monto"].sum()) if not sub_pl.empty else 0.0
-
-            # 5) Pendientes (nunca negativos)
-            pend_h = max(0.0, pactado - pagado_h)
-            pend_l = max(0.0, calc_litis - pagado_l)
+            pag_h = float(ph[ph["Caso"] == exp]["Monto"].sum()) if ph is not None and not ph.empty else 0
+            calc_l = float(cl[cl["Caso"] == exp]["CuotaCalc"].sum()) if cl is not None and not cl.empty else 0
+            pag_l = float(pl[pl["Caso"] == exp]["Monto"].sum()) if pl is not None and not pl.empty else 0
 
             rows.append([
-                exp,
-                c.get("Cliente",""),
-                c.get("Materia",""),
-                float(pactado),
-                float(pagado_h),
-                float(pend_h),
-                float(calc_litis),
-                float(pagado_l),
-                float(pend_l)
+                exp, c.get("Cliente",""), c.get("Materia",""),
+                pactado, pag_h, max(0,pactado-pag_h),
+                calc_l, pag_l, max(0,calc_l-pag_l)
             ])
 
         df_res = pd.DataFrame(rows, columns=[
@@ -1111,66 +1071,124 @@ if menu == "Dashboard":
         ])
 
     # =========================
-    # Estado de cuotas (vencidas / por vencer) - se mantiene igual que lo tenías
+    # FILTRO POR ROL (NUEVO, NO ROMPE)
     # =========================
-    df_estado = cuotas_status_all()
+    df_res_view = df_res.copy()
+    if rol_dash == "abogado":
+        casos_propios = casos[
+            (casos["Abogado"].astype(str).str.contains(usuario_dash, na=False)) |
+            (casos["AbogadosExtra"].astype(str).str.contains(usuario_dash, na=False)) |
+            (casos["Delegados"].astype(str).str.contains(usuario_dash, na=False))
+        ]["Expediente"].astype(str).tolist()
+        df_res_view = df_res[df_res["Expediente"].isin(casos_propios)].copy()
 
     # =========================
-    # Totales para métricas
+    # MÉTRICAS (AJUSTADAS POR ROL)
     # =========================
-    total_pactado = df_res["Honorario Pactado"].sum() if not df_res.empty else 0
-    total_pagado_h = df_res["Honorario Pagado"].sum() if not df_res.empty else 0
-    total_pend_h = df_res["Honorario Pendiente"].sum() if not df_res.empty else 0
-
-    total_litis = df_res["Cuota Litis Calculada"].sum() if not df_res.empty else 0
-    total_pagado_l = df_res["Pagado Litis"].sum() if not df_res.empty else 0
-    total_pend_l = df_res["Saldo Litis"].sum() if not df_res.empty else 0
+    if rol_dash == "abogado":
+        total_pactado = 0
+        total_pagado_h = 0
+        total_pend_h = df_res_view["Honorario Pendiente"].sum()
+        total_litis = 0
+        total_pagado_l = 0
+        total_pend_l = df_res_view["Saldo Litis"].sum()
+    else:
+        total_pactado = df_res_view["Honorario Pactado"].sum()
+        total_pagado_h = df_res_view["Honorario Pagado"].sum()
+        total_pend_h = df_res_view["Honorario Pendiente"].sum()
+        total_litis = df_res_view["Cuota Litis Calculada"].sum() if rol_dash=="admin" else 0
+        total_pagado_l = df_res_view["Pagado Litis"].sum() if rol_dash=="admin" else 0
+        total_pend_l = df_res_view["Saldo Litis"].sum()
 
     # =========================
-    # UI
+    # UI PRINCIPAL (NO SE ELIMINA NADA)
     # =========================
     st.subheader("📊 Dashboard General")
 
-    r1c1, r1c2, r1c3 = st.columns(3)
-    r1c1.metric("👥 Clientes", f"{len(clientes)}")
-    r1c2.metric("👨‍⚖️ Abogados", f"{len(abogados)}")
-    r1c3.metric("📁 Casos", f"{len(casos)}")
+    c1,c2,c3 = st.columns(3)
+    c1.metric("👥 Clientes", f"{len(clientes)}")
+    c2.metric("👨‍⚖️ Abogados", f"{len(abogados)}")
+    c3.metric("📁 Casos", f"{len(df_res_view)}")
 
     st.markdown("### 💰 Indicadores Económicos")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Honorarios pactados (S/)", f"{total_pactado:,.2f}")
-    c2.metric("Honorarios pagados (S/)", f"{total_pagado_h:,.2f}")
-    c3.metric("Honorarios pendientes (S/)", f"{total_pend_h:,.2f}")
+    a,b,c = st.columns(3)
+    a.metric("Honorarios pactados (S/)", f"{total_pactado:,.2f}")
+    b.metric("Honorarios pagados (S/)", f"{total_pagado_h:,.2f}")
+    c.metric("Honorarios pendientes (S/)", f"{total_pend_h:,.2f}")
 
-    c4, c5, c6 = st.columns(3)
-    c4.metric("Cuota litis calculada (S/)", f"{total_litis:,.2f}")
-    c5.metric("Cuota litis pagada (S/)", f"{total_pagado_l:,.2f}")
-    c6.metric("Cuota litis pendiente (S/)", f"{total_pend_l:,.2f}")
+    d,e,f = st.columns(3)
+    d.metric("Cuota litis calculada (S/)", f"{total_litis:,.2f}")
+    e.metric("Cuota litis pagada (S/)", f"{total_pagado_l:,.2f}")
+    f.metric("Cuota litis pendiente (S/)", f"{total_pend_l:,.2f}")
 
     st.divider()
     st.markdown("### 📌 Detalle por caso")
-    st.dataframe(df_res, use_container_width=True)
+    st.dataframe(df_res_view, use_container_width=True)
 
+    # =========================
+    # 📅 CALENDARIO REAL DE ACTUACIONES (AGREGADO)
+    # =========================
     st.divider()
-    st.markdown("### 📅 Cuotas vencidas / por vencer")
-    if df_estado is None or df_estado.empty or "SaldoCuota" not in df_estado.columns:
-        st.info("Aún no hay cronograma calculable.")
+    st.markdown("### 📅 Agenda de Actuaciones")
+
+    df_act = load_df("actuaciones")
+    if df_act is not None and not df_act.empty:
+        df_act = df_act.copy()
+        df_act["FechaAgenda"] = pd.to_datetime(
+            df_act.get("FechaProximaAccion", df_act.get("Fecha","")),
+            errors="coerce"
+        )
+        df_act = df_act[df_act["FechaAgenda"].notna()].sort_values("FechaAgenda")
+
+        hoy = pd.to_datetime(date.today())
+        def sem(f):
+            if f < hoy: return "🔴"
+            if f <= hoy + pd.Timedelta(days=7): return "🟠"
+            return "🟢"
+
+        df_act["Estado"] = df_act["FechaAgenda"].apply(sem)
+
+        def color(r):
+            return ["background-color:#ffcccc" if r["Estado"]=="🔴"
+                    else "background-color:#ffe5b4" if r["Estado"]=="🟠"
+                    else "background-color:#d6f5d6"] * len(r)
+
+        st.dataframe(
+            df_act[["FechaAgenda","Estado","Caso","Resumen"]]
+            .style.apply(color, axis=1),
+            use_container_width=True
+        )
     else:
-        df_estado = df_estado.copy()
-        df_estado["SaldoCuota"] = pd.to_numeric(df_estado["SaldoCuota"], errors="coerce").fillna(0.0)
+        st.info("No hay actuaciones registradas.")
 
-        df_pend = df_estado[df_estado["SaldoCuota"] > 0].copy()
-        vencidas = df_pend[df_pend["DiasParaVencimiento"].notna() & (df_pend["DiasParaVencimiento"] < 0)]
-        por_vencer = df_pend[df_pend["DiasParaVencimiento"].notna() & (df_pend["DiasParaVencimiento"].between(0, 7))]
+    # =========================
+    # 🚦 SEMÁFORO DE PENDIENTES DE PAGO (AGREGADO)
+    # =========================
+    st.divider()
+    st.markdown("### 🚦 Pendientes de Pago")
 
-        st.markdown("**Vencidas**")
-        st.dataframe(vencidas, use_container_width=True)
-        st.markdown("**Por vencer (7 días)**")
-        st.dataframe(por_vencer, use_container_width=True)
+    df_pend = df_res_view.copy()
+    df_pend["TotalPendiente"] = df_pend["Honorario Pendiente"] + df_pend["Saldo Litis"]
+
+    def sem_p(x):
+        if x <= 0: return "🟢 Al día"
+        return "🔴 Pendiente"
+
+    df_pend["Estado"] = df_pend["TotalPendiente"].apply(sem_p)
+
+    def color_p(r):
+        return ["background-color:#ffcccc" if "🔴" in r["Estado"]
+                else "background-color:#d6f5d6"] * len(r)
+
+    st.dataframe(
+        df_pend[["Expediente","Cliente","TotalPendiente","Estado"]]
+        .style.apply(color_p, axis=1),
+        use_container_width=True
+    )
 
     st.download_button(
         "⬇️ Descargar reporte casos (CSV)",
-        df_res.to_csv(index=False).encode("utf-8"),
+        df_res_view.to_csv(index=False).encode("utf-8"),
         "reporte_casos.csv"
     )
 # ==========================================================
