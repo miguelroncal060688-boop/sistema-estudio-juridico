@@ -3359,7 +3359,6 @@ if menu == "Usuarios":
 
     # =========================
     # ASEGURAR COLUMNAS EXTRA EN USUARIOS (para NombreCompleto/DNI)
-    # (Si no están en SCHEMAS["usuarios"], save_df las eliminaría; por eso las agregamos aquí)
     # =========================
     try:
         if "usuarios" in SCHEMAS:
@@ -3395,7 +3394,6 @@ if menu == "Usuarios":
         if not rol_norm:
             return False
 
-        # comparar roles normalizados (permite Admin/admin)
         tmp = permisos.copy()
         tmp["Rol_norm"] = tmp["Rol"].astype(str).str.strip().str.lower()
         fila = tmp[tmp["Rol_norm"] == rol_norm]
@@ -3449,10 +3447,22 @@ if menu == "Usuarios":
     st.markdown("## 👤 Gestión de usuarios")
     accion_u = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True, key="usr_acc")
 
-    # Para asociar abogado
+    # ✅ CAMBIO: cargar abogados SIEMPRE desde CSV (no desde variable global)
+    df_abogados = load_df("abogados")
     abogado_map = {}
-    if 'abogados' in globals() and abogados is not None and not abogados.empty and "ID" in abogados.columns and "Nombre" in abogados.columns:
-        abogado_map = {str(r["ID"]): str(r["Nombre"]) for _, r in abogados.iterrows()}
+    if df_abogados is not None and not df_abogados.empty:
+        # tolerancia si algún CSV antiguo no tiene estas columnas
+        if "ID" in df_abogados.columns:
+            if "Nombre" not in df_abogados.columns:
+                for alt in ["NOMBRE", "Nombre completo", "NombreCompleto"]:
+                    if alt in df_abogados.columns:
+                        df_abogados["Nombre"] = df_abogados[alt]
+                        break
+            if "Nombre" in df_abogados.columns:
+                df_abogados["ID"] = df_abogados["ID"].astype(str).str.strip()
+                df_abogados["Nombre"] = df_abogados["Nombre"].astype(str).str.strip()
+                df_abogados = df_abogados[df_abogados["ID"] != ""]
+                abogado_map = {str(r["ID"]): str(r["Nombre"]) for _, r in df_abogados.iterrows()}
 
     # ---------- NUEVO ----------
     if accion_u == "Nuevo":
@@ -3468,13 +3478,14 @@ if menu == "Usuarios":
             dni_personal = ""
 
             if rol == "Abogado":
+                st.markdown("### 👨‍⚖️ Asociación obligatoria a abogado")
                 if not abogado_map:
-                    st.warning("No hay abogados registrados para asociar. Registra abogados primero.")
+                    st.error("❌ No hay abogados registrados con ID para asociar. Registra abogados primero.")
                 else:
                     abogado_id = st.selectbox(
-                        "Abogado asociado",
+                        "Abogado asociado (obligatorio)",
                         options=list(abogado_map.keys()),
-                        format_func=lambda x: f"{abogado_map.get(str(x),'') } (ID {x})",
+                        format_func=lambda x: f"{abogado_map.get(str(x),'')} (ID {x})",
                         key="usr_new_abogado"
                     )
             else:
@@ -3492,10 +3503,13 @@ if menu == "Usuarios":
                     st.error("Contraseña es obligatoria.")
                 elif pwd != pwd2:
                     st.error("Las contraseñas no coinciden.")
+                # ✅ CAMBIO: exigir abogado si rol=Abogado
+                elif rol == "Abogado" and not str(abogado_id).strip():
+                    st.error("Debes seleccionar un abogado asociado.")
                 else:
                     usuarios = add_row(usuarios, {
                         "Usuario": str(usuario).strip(),
-                        "PasswordHash": sha256(pwd),  # ✅ usa tu función sha256 ya existente
+                        "PasswordHash": sha256(pwd),
                         "Rol": rol,
                         "AbogadoID": str(abogado_id).strip() if rol == "Abogado" else "",
                         "Activo": "1",
@@ -3541,25 +3555,24 @@ if menu == "Usuarios":
                 new_pwd = st.text_input("Nueva contraseña", type="password", key="usr_edit_pwd")
                 new_pwd2 = st.text_input("Repetir nueva contraseña", type="password", key="usr_edit_pwd2")
 
-                abogado_id_new = str(fila.get("AbogadoID",""))
-                nombre_new = str(fila.get("NombreCompleto",""))
-                dni_new = str(fila.get("DNI",""))
+                abogado_id_new = str(fila.get("AbogadoID","")).strip()
+                nombre_new = str(fila.get("NombreCompleto","")).strip()
+                dni_new = str(fila.get("DNI","")).strip()
 
                 if rol_new == "Abogado":
+                    st.markdown("### 👨‍⚖️ Asociación obligatoria a abogado")
                     if not abogado_map:
-                        st.warning("No hay abogados registrados para asociar. Registra abogados primero.")
+                        st.error("❌ No hay abogados registrados con ID para asociar. Registra abogados primero.")
                     else:
-                        # si el valor actual no está en lista, usa el primero
                         opts = list(abogado_map.keys())
                         idx_default = opts.index(abogado_id_new) if abogado_id_new in opts else 0
                         abogado_id_new = st.selectbox(
-                            "Abogado asociado",
+                            "Abogado asociado (obligatorio)",
                             options=opts,
                             index=idx_default,
                             format_func=lambda x: f"{abogado_map.get(str(x),'')} (ID {x})",
                             key="usr_edit_abogado"
                         )
-                        # limpiar campos de no-abogado
                         nombre_new = ""
                         dni_new = ""
                 else:
@@ -3576,6 +3589,9 @@ if menu == "Usuarios":
                         st.error("Ese usuario ya existe.")
                     elif new_pwd and new_pwd != new_pwd2:
                         st.error("Las contraseñas no coinciden.")
+                    # ✅ CAMBIO: exigir abogado si rol=Abogado
+                    elif rol_new == "Abogado" and not str(abogado_id_new).strip():
+                        st.error("Debes seleccionar un abogado asociado.")
                     else:
                         idx = usuarios.index[usuarios["Usuario"].astype(str) == str(sel_user)][0]
 
@@ -3614,7 +3630,8 @@ if menu == "Usuarios":
                 st.rerun()
 
     st.divider()
-    st.dataframe(usuarios, use_container_width=True)
+    # Opcional: ocultar hash en pantalla
+    st.dataframe(usuarios.drop(columns=["PasswordHash"], errors="ignore"), use_container_width=True)
 # ==========================================================
 # REPORTES (FILTRADOS POR ROL)
 # ==========================================================
