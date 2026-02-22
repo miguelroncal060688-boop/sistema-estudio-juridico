@@ -3329,9 +3329,6 @@ if menu == "Generar Contrato":
 if menu == "Usuarios":
     st.subheader("👥 Usuarios del Sistema")
 
-    # =========================
-    # CONFIGURACIÓN BASE
-    # =========================
     ROLES_DISPONIBLES = [
         "Admin",
         "Abogado",
@@ -3348,18 +3345,13 @@ if menu == "Usuarios":
         "Solo Lectura": {"ver": True, "agregar": False, "modificar": False, "borrar": False},
     }
 
-    # =========================
-    # NORMALIZADORES (para evitar problemas Admin/admin/espacios)
-    # =========================
     def _norm_role(x: str) -> str:
         return str(x or "").strip().lower()
 
     def _is_admin() -> bool:
         return _norm_role(st.session_state.get("rol", "")) in ["admin", "administrador"]
 
-    # =========================
-    # ASEGURAR COLUMNAS EXTRA EN USUARIOS (para NombreCompleto/DNI)
-    # =========================
+    # asegurar columnas extra
     try:
         if "usuarios" in SCHEMAS:
             for extra in ["NombreCompleto", "DNI"]:
@@ -3368,11 +3360,7 @@ if menu == "Usuarios":
     except Exception:
         pass
 
-    # =========================
-    # CARGAR PERMISOS (CSV)
-    # =========================
     permisos = load_df("permisos")
-
     if permisos is None or permisos.empty:
         rows = []
         for rol, perms in DEFAULT_PERMISOS.items():
@@ -3386,42 +3374,30 @@ if menu == "Usuarios":
         permisos = pd.DataFrame(rows)
         save_df("permisos", permisos)
 
-    # =========================
-    # FUNCIÓN DE PERMISO (LOCAL) + EXPORT A GLOBAL
-    # =========================
     def has_perm(accion: str) -> bool:
         rol_norm = _norm_role(st.session_state.get("rol", ""))
         if not rol_norm:
             return False
-
         tmp = permisos.copy()
         tmp["Rol_norm"] = tmp["Rol"].astype(str).str.strip().str.lower()
         fila = tmp[tmp["Rol_norm"] == rol_norm]
-
         if fila.empty:
             return False
-
         col = {
             "ver": "Ver",
             "agregar": "Agregar",
             "modificar": "Modificar",
             "borrar": "Borrar"
         }.get(accion)
-
         if not col:
             return False
-
         return bool(int(fila.iloc[0].get(col, 0)))
 
-    globals()["has_perm"] = has_perm  # ✅ para que otros módulos no fallen con NameError
+    globals()["has_perm"] = has_perm
 
-    # =========================
-    # PANEL DE PERMISOS (SOLO ADMIN)
-    # =========================
     if _is_admin():
         with st.expander("⚙️ Configuración de permisos por rol", expanded=False):
             st.caption("Define qué puede hacer cada rol en el sistema.")
-
             edit = permisos.copy()
 
             for i in edit.index:
@@ -3441,17 +3417,13 @@ if menu == "Usuarios":
     else:
         st.info("Solo Admin puede editar la matriz de permisos. Puedes ver usuarios, pero no cambiar permisos.")
 
-    # =========================
-    # GESTIÓN DE USUARIOS
-    # =========================
     st.markdown("## 👤 Gestión de usuarios")
     accion_u = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True, key="usr_acc")
 
-    # ✅ CAMBIO: cargar abogados SIEMPRE desde CSV (no desde variable global)
+    # ✅ CAMBIO: cargar abogados desde CSV SIEMPRE
     df_abogados = load_df("abogados")
     abogado_map = {}
     if df_abogados is not None and not df_abogados.empty:
-        # tolerancia si algún CSV antiguo no tiene estas columnas
         if "ID" in df_abogados.columns:
             if "Nombre" not in df_abogados.columns:
                 for alt in ["NOMBRE", "Nombre completo", "NombreCompleto"]:
@@ -3470,7 +3442,6 @@ if menu == "Usuarios":
             usuario = st.text_input("Usuario", key="usr_new_user")
             pwd = st.text_input("Contraseña", type="password", key="usr_new_pwd")
             pwd2 = st.text_input("Repetir contraseña", type="password", key="usr_new_pwd2")
-
             rol = st.selectbox("Rol", ROLES_DISPONIBLES, key="usr_new_role")
 
             abogado_id = ""
@@ -3478,7 +3449,7 @@ if menu == "Usuarios":
             dni_personal = ""
 
             if rol == "Abogado":
-                st.markdown("### 👨‍⚖️ Asociación obligatoria a abogado")
+                # ✅ CAMBIO: bloquear si no hay abogados para asociar
                 if not abogado_map:
                     st.error("❌ No hay abogados registrados con ID para asociar. Registra abogados primero.")
                 else:
@@ -3503,9 +3474,9 @@ if menu == "Usuarios":
                     st.error("Contraseña es obligatoria.")
                 elif pwd != pwd2:
                     st.error("Las contraseñas no coinciden.")
-                # ✅ CAMBIO: exigir abogado si rol=Abogado
-                elif rol == "Abogado" and not str(abogado_id).strip():
-                    st.error("Debes seleccionar un abogado asociado.")
+                # ✅ CAMBIO: exigir abogado sí o sí
+                elif rol == "Abogado" and (not abogado_map or not str(abogado_id).strip()):
+                    st.error("Debes asociar el usuario a un abogado existente (obligatorio).")
                 else:
                     usuarios = add_row(usuarios, {
                         "Usuario": str(usuario).strip(),
@@ -3536,14 +3507,12 @@ if menu == "Usuarios":
 
             with st.form("usr_edit"):
                 usuario_new = st.text_input("Usuario", value=str(fila["Usuario"]), key="usr_edit_user")
-
                 rol_new = st.selectbox(
                     "Rol",
                     ROLES_DISPONIBLES,
                     index=ROLES_DISPONIBLES.index(str(fila.get("Rol","Solo Lectura"))) if str(fila.get("Rol","Solo Lectura")) in ROLES_DISPONIBLES else 0,
                     key="usr_edit_role"
                 )
-
                 activo_new = st.selectbox(
                     "Activo",
                     ["1","0"],
@@ -3556,11 +3525,11 @@ if menu == "Usuarios":
                 new_pwd2 = st.text_input("Repetir nueva contraseña", type="password", key="usr_edit_pwd2")
 
                 abogado_id_new = str(fila.get("AbogadoID","")).strip()
-                nombre_new = str(fila.get("NombreCompleto","")).strip()
-                dni_new = str(fila.get("DNI","")).strip()
+                nombre_new = str(fila.get("NombreCompleto",""))
+                dni_new = str(fila.get("DNI",""))
 
                 if rol_new == "Abogado":
-                    st.markdown("### 👨‍⚖️ Asociación obligatoria a abogado")
+                    # ✅ CAMBIO: bloquear si no hay abogados
                     if not abogado_map:
                         st.error("❌ No hay abogados registrados con ID para asociar. Registra abogados primero.")
                     else:
@@ -3589,12 +3558,11 @@ if menu == "Usuarios":
                         st.error("Ese usuario ya existe.")
                     elif new_pwd and new_pwd != new_pwd2:
                         st.error("Las contraseñas no coinciden.")
-                    # ✅ CAMBIO: exigir abogado si rol=Abogado
-                    elif rol_new == "Abogado" and not str(abogado_id_new).strip():
-                        st.error("Debes seleccionar un abogado asociado.")
+                    # ✅ CAMBIO: exigir abogado sí o sí
+                    elif rol_new == "Abogado" and (not abogado_map or not str(abogado_id_new).strip()):
+                        st.error("Debes asociar el usuario a un abogado existente (obligatorio).")
                     else:
                         idx = usuarios.index[usuarios["Usuario"].astype(str) == str(sel_user)][0]
-
                         usuarios.at[idx, "Usuario"] = str(usuario_new).strip()
                         usuarios.at[idx, "Rol"] = rol_new
                         usuarios.at[idx, "Activo"] = str(activo_new)
@@ -3630,8 +3598,7 @@ if menu == "Usuarios":
                 st.rerun()
 
     st.divider()
-    # Opcional: ocultar hash en pantalla
-    st.dataframe(usuarios.drop(columns=["PasswordHash"], errors="ignore"), use_container_width=True)
+    st.dataframe(usuarios, use_container_width=True)
 # ==========================================================
 # REPORTES (FILTRADOS POR ROL)
 # ==========================================================
