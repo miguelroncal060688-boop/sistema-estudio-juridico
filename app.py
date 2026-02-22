@@ -2903,12 +2903,12 @@ if menu == "Usuarios":
     }
 
     # =========================
-    # CARGAR PERMISOS (CSV)
+    # CARGAR PERMISOS (CSV) - SIEMPRE
     # =========================
-    if "permisos" not in globals():
-        permisos = load_df("permisos")
+    permisos = load_df("permisos")
 
-    if permisos.empty:
+    # Si no existe o está vacío, crear defaults
+    if permisos is None or permisos.empty:
         rows = []
         for rol, perms in DEFAULT_PERMISOS.items():
             rows.append({
@@ -2922,7 +2922,7 @@ if menu == "Usuarios":
         save_df("permisos", permisos)
 
     # =========================
-    # FUNCION DE PERMISO
+    # FUNCIÓN DE PERMISO (LOCAL)
     # =========================
     def has_perm(accion: str) -> bool:
         rol = st.session_state.get("rol", "")
@@ -2935,7 +2935,12 @@ if menu == "Usuarios":
             "modificar": "Modificar",
             "borrar": "Borrar"
         }.get(accion)
+        if not col:
+            return False
         return bool(int(fila.iloc[0].get(col, 0)))
+
+    # ✅ FIX SIMPLE: hacer visible has_perm en toda la app (evita NameError en otros menús)
+    globals()["has_perm"] = has_perm
 
     # =========================
     # PANEL DE PERMISOS (ADMIN)
@@ -2949,13 +2954,13 @@ if menu == "Usuarios":
             for i in edit.index:
                 st.markdown(f"**{edit.at[i,'Rol']}**")
                 c1, c2, c3, c4 = st.columns(4)
-                edit.at[i,"Ver"] = int(c1.checkbox("Ver", value=bool(edit.at[i,"Ver"]), key=f"p_ver_{i}"))
-                edit.at[i,"Agregar"] = int(c2.checkbox("Agregar", value=bool(edit.at[i,"Agregar"]), key=f"p_add_{i}"))
-                edit.at[i,"Modificar"] = int(c3.checkbox("Modificar", value=bool(edit.at[i,"Modificar"]), key=f"p_mod_{i}"))
-                edit.at[i,"Borrar"] = int(c4.checkbox("Borrar", value=bool(edit.at[i,"Borrar"]), key=f"p_del_{i}"))
+                edit.at[i,"Ver"] = int(c1.checkbox("Ver", value=bool(int(edit.at[i,"Ver"])), key=f"p_ver_{i}"))
+                edit.at[i,"Agregar"] = int(c2.checkbox("Agregar", value=bool(int(edit.at[i,"Agregar"])), key=f"p_add_{i}"))
+                edit.at[i,"Modificar"] = int(c3.checkbox("Modificar", value=bool(int(edit.at[i,"Modificar"])), key=f"p_mod_{i}"))
+                edit.at[i,"Borrar"] = int(c4.checkbox("Borrar", value=bool(int(edit.at[i,"Borrar"])), key=f"p_del_{i}"))
                 st.divider()
 
-            if st.button("💾 Guardar permisos"):
+            if st.button("💾 Guardar permisos", key="p_save"):
                 permisos = edit.copy()
                 save_df("permisos", permisos)
                 st.success("✅ Permisos actualizados")
@@ -2971,8 +2976,8 @@ if menu == "Usuarios":
     # ---------- NUEVO ----------
     if accion_u == "Nuevo":
         with st.form("usr_new"):
-            usuario = st.text_input("Usuario")
-            rol = st.selectbox("Rol", ROLES_DISPONIBLES)
+            usuario = st.text_input("Usuario", key="usr_new_user")
+            rol = st.selectbox("Rol", ROLES_DISPONIBLES, key="usr_new_role")
             submit = st.form_submit_button("Crear usuario")
 
             if submit:
@@ -2994,14 +2999,15 @@ if menu == "Usuarios":
             sel = st.selectbox(
                 "Selecciona usuario",
                 usuarios["ID"].tolist(),
-                format_func=lambda x: f"{usuarios[usuarios['ID']==x].iloc[0]['Usuario']}"
+                format_func=lambda x: f"{usuarios[usuarios['ID']==x].iloc[0]['Usuario']}",
+                key="usr_edit_sel"
             )
 
             fila = usuarios[usuarios["ID"] == sel].iloc[0]
 
             with st.form("usr_edit"):
-                usuario = st.text_input("Usuario", value=fila["Usuario"])
-                rol = st.selectbox("Rol", ROLES_DISPONIBLES, index=ROLES_DISPONIBLES.index(fila["Rol"]))
+                usuario = st.text_input("Usuario", value=fila["Usuario"], key="usr_edit_user")
+                rol = st.selectbox("Rol", ROLES_DISPONIBLES, index=ROLES_DISPONIBLES.index(fila["Rol"]), key="usr_edit_role")
                 submit = st.form_submit_button("Guardar cambios")
 
                 if submit:
@@ -3019,12 +3025,13 @@ if menu == "Usuarios":
             sel = st.selectbox(
                 "Selecciona usuario a eliminar",
                 usuarios["ID"].tolist(),
-                format_func=lambda x: f"{usuarios[usuarios['ID']==x].iloc[0]['Usuario']}"
+                format_func=lambda x: f"{usuarios[usuarios['ID']==x].iloc[0]['Usuario']}",
+                key="usr_del_sel"
             )
 
             st.warning("⚠️ Esta acción no se puede deshacer")
 
-            if st.button("🗑️ Eliminar usuario"):
+            if st.button("🗑️ Eliminar usuario", key="usr_del_btn"):
                 usuarios = usuarios[usuarios["ID"] != sel].copy()
                 save_df("usuarios", usuarios)
                 st.success("✅ Usuario eliminado")
