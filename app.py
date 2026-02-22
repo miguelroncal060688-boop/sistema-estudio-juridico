@@ -169,6 +169,9 @@ FILES = {
     "abogados": "abogados.csv",
     "casos": "casos.csv",
 
+    # ✅ NUEVO: colaboradores
+    "colaboradores": "colaboradores.csv",
+
     "honorarios": "honorarios.csv",
     "honorarios_etapas": "honorarios_etapas.csv",
 
@@ -181,14 +184,13 @@ FILES = {
     "documentos": "documentos.csv",
     "plantillas": "plantillas_contratos.csv",
 
-    # ✅ NUEVO: consultas
     "consultas": "consultas.csv",
     "instancias": "instancias.csv",
     "honorarios_tipo": "honorarios_tipo.csv",
     "contratos": "contratos.csv",
     "auditoria_mod": "auditoria_mod.csv",
 
-    # ✅ NUEVO (NECESARIO PARA ROLES Y PERMISOS)
+    # ✅ ROLES Y PERMISOS
     "permisos": "permisos.csv",
 }
 # ==========================================================
