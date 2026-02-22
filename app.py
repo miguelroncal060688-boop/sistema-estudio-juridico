@@ -1720,7 +1720,7 @@ if menu == "Colaboradores":
     st.dataframe(colaboradores, use_container_width=True)
 
 # ==========================================================
-# CASOS (CRUD) — datos judiciales + DEFENSA CONJUNTA + DELEGACIÓN
+# CASOS (CRUD) — datos judiciales + DEFENSA CONJUNTA + DELEGACIÓN (GUIADA)
 # + Instancia incluye: "Por iniciar" e "Instancia Administrativa"
 # ==========================================================
 if menu == "Casos":
@@ -1741,11 +1741,12 @@ if menu == "Casos":
         pass
 
     # -------------------------
-    # Cargar clientes/abogados/usuarios UNA sola vez + tolerar columnas antiguas
+    # Cargar clientes/abogados/usuarios/colaboradores UNA sola vez + tolerar columnas antiguas
     # -------------------------
     df_clientes = load_df("clientes")
     df_abogados = load_df("abogados")
     df_usuarios = load_df("usuarios")
+    df_colab = load_df("colaboradores")  # ✅ NUEVO: para delegación guiada
 
     # Clientes: asegurar columna Nombre
     if df_clientes is None:
@@ -1796,8 +1797,31 @@ if menu == "Casos":
         delegables = tmpu["Usuario"].astype(str).str.strip().tolist()
         delegables = [u for u in delegables if u != ""]
 
+    # ✅ Colaboradores (delegación guiada): Nombre -> Usuario y Usuario -> Nombre
+    colab_nombre_opts = []
+    colab_nombre_to_user = {}
+    colab_user_to_nombre = {}
+    if df_colab is None:
+        df_colab = pd.DataFrame()
+
+    if not df_colab.empty:
+        for col in ["Nombre", "Usuario", "Activo"]:
+            if col not in df_colab.columns:
+                df_colab[col] = ""
+        df_colab["Nombre"] = df_colab["Nombre"].astype(str).str.strip()
+        df_colab["Usuario"] = df_colab["Usuario"].astype(str).str.strip()
+        df_colab["Activo"] = df_colab["Activo"].astype(str).str.strip()
+
+        df_colab2 = df_colab[(df_colab["Activo"] != "0") & (df_colab["Nombre"] != "") & (df_colab["Usuario"] != "")]
+        colab_nombre_opts = df_colab2["Nombre"].tolist()
+
+        for _, r in df_colab2.iterrows():
+            n = str(r["Nombre"]).strip()
+            u = str(r["Usuario"]).strip()
+            colab_nombre_to_user[n] = u
+            colab_user_to_nombre[u] = n
+
     # ✅ OPCIONES PARA EL CAMPO "Instancia" DEL CASO
-    # (incluye lo que pediste sin depender de cambios globales)
     INSTANCIA_OPTS = ["Por iniciar", "Instancia Administrativa"] + list(ETAPAS_HONORARIOS)
 
     # ----------------------------------------------------------
@@ -1824,25 +1848,42 @@ if menu == "Casos":
 
             st.divider()
 
-            # ✅ Delegación (dinámico fuera del form)
-            st.markdown("### 🧩 Delegación del caso (asistentes / secretaria)")
-            delegacion_activa = st.checkbox("✅ Delegar este caso a otros usuarios", value=False, key="cas_new_del_act")
+            # ✅ Delegación GUIADA (fuera del form, como ya lo tenías)
+            st.markdown("### 🧩 Delegación del caso (guiada)")
+            delegacion_activa = st.checkbox("✅ Delegar este caso", value=False, key="cas_new_del_act")
 
-            num_delegados = 0
             delegados_sel = []
             if delegacion_activa:
-                if not delegables:
-                    st.warning("No hay usuarios activos disponibles para delegar.")
-                else:
-                    num_delegados = st.number_input(
-                        "¿Cuántos delegados tendrá el caso?",
-                        min_value=1, max_value=6, value=1, step=1,
-                        key="cas_new_num_del"
+                # 1) Delegar a Colaboradores (por nombre)
+                if colab_nombre_opts:
+                    sel_colab = st.multiselect(
+                        "Delegar a colaboradores (Secretaria/Administrativo/Practicante)",
+                        colab_nombre_opts,
+                        key="cas_new_del_colab"
                     )
-                    for i in range(int(num_delegados)):
-                        delegados_sel.append(
-                            st.selectbox(f"Delegado #{i+1} (usuario)", delegables, key=f"cas_new_del_{i}")
-                        )
+                else:
+                    sel_colab = []
+                    st.info("No hay colaboradores vinculados a usuarios (o están inactivos).")
+
+                # 2) Delegar a otros usuarios activos (fallback)
+                sel_users_extra = st.multiselect(
+                    "Delegar a otros usuarios (opcional)",
+                    delegables,
+                    key="cas_new_del_users"
+                )
+
+                # convertir colaboradores -> usuario
+                delegados_sel = []
+                for n in sel_colab:
+                    u = colab_nombre_to_user.get(n, "")
+                    if u:
+                        delegados_sel.append(u)
+                # añadir usuarios directos
+                delegados_sel.extend([u for u in sel_users_extra if u])
+
+                # únicos preservando orden
+                seen = set()
+                delegados_sel = [x for x in delegados_sel if not (x in seen or seen.add(x))]
 
             st.divider()
 
@@ -1869,7 +1910,6 @@ if menu == "Casos":
                 anio = st.text_input("Año", key="cas_new_anio")
                 materia = st.text_input("Materia", key="cas_new_mat")
 
-                # ✅ AQUÍ están las opciones nuevas de Instancia
                 instancia = st.selectbox("Instancia", INSTANCIA_OPTS, key="cas_new_inst")
 
                 pret = st.text_input("Pretensión", key="cas_new_pret")
@@ -1885,6 +1925,10 @@ if menu == "Casos":
 
             if submit:
                 new_id = next_id(df_casos)
+
+                # num_delegados se deriva del listado final
+                num_delegados = len(delegados_sel) if delegacion_activa else 0
+
                 df_casos = add_row(df_casos, {
                     "ID": new_id,
                     "Cliente": cliente,
@@ -1906,8 +1950,9 @@ if menu == "Casos":
                     "NumAbogados": int(num_abogados) if defensa_conjunta else 1,
                     "AbogadosExtra": " | ".join([a for a in abogados_extra if str(a).strip() != ""]),
 
+                    # ✅ Delegación guiada guarda USUARIOS (compatible con filtros)
                     "DelegacionActiva": "1" if delegacion_activa else "0",
-                    "NumDelegados": int(num_delegados) if delegacion_activa else 0,
+                    "NumDelegados": int(num_delegados),
                     "Delegados": " | ".join([d for d in delegados_sel if str(d).strip() != ""]),
                 }, "casos")
 
@@ -1927,7 +1972,6 @@ if menu == "Casos":
         fila = df_casos[df_casos["Expediente"] == exp_sel].iloc[0]
 
         del_act_prev = str(fila.get("DelegacionActiva","0")) == "1"
-        num_del_prev = int(pd.to_numeric(fila.get("NumDelegados", 0), errors="coerce") or 0)
         del_prev = str(fila.get("Delegados","") or "")
         del_list_prev = [x.strip() for x in del_prev.split("|") if x.strip()]
 
@@ -1994,34 +2038,51 @@ if menu == "Casos":
                 key="cas_edit_estado"
             )
 
-            # Delegación
-            st.markdown("### 🧩 Delegación del caso")
-            delegacion_activa = st.checkbox("✅ Delegar este caso a otros usuarios", value=del_act_prev, key="cas_edit_del_act")
-            num_delegados = 0
-            delegados_sel = []
+            # ✅ Delegación GUIADA (dentro del form en edición)
+            st.markdown("### 🧩 Delegación del caso (guiada)")
+            delegacion_activa = st.checkbox("✅ Delegar este caso", value=del_act_prev, key="cas_edit_del_act")
 
+            delegados_sel = []
             if delegacion_activa:
-                if not delegables:
-                    st.warning("No hay usuarios activos disponibles para delegar.")
-                else:
-                    num_delegados = st.number_input(
-                        "¿Cuántos delegados tendrá el caso?",
-                        min_value=1, max_value=6,
-                        value=max(1, num_del_prev) if num_del_prev else 1,
-                        step=1,
-                        key="cas_edit_num_del"
+                # preselect colaboradores según usuarios guardados
+                pre_colab = [colab_user_to_nombre[u] for u in del_list_prev if u in colab_user_to_nombre]
+                pre_otros = [u for u in del_list_prev if u not in colab_user_to_nombre]
+
+                if colab_nombre_opts:
+                    sel_colab = st.multiselect(
+                        "Delegar a colaboradores",
+                        colab_nombre_opts,
+                        default=pre_colab,
+                        key="cas_edit_del_colab"
                     )
-                    for i in range(int(num_delegados)):
-                        default = del_list_prev[i] if i < len(del_list_prev) else delegables[0]
-                        idx_def = delegables.index(default) if default in delegables else 0
-                        delegados_sel.append(
-                            st.selectbox(f"Delegado #{i+1} (usuario)", delegables, index=idx_def, key=f"cas_edit_del_{i}")
-                        )
+                else:
+                    sel_colab = []
+                    st.info("No hay colaboradores vinculados a usuarios (o están inactivos).")
+
+                sel_users_extra = st.multiselect(
+                    "Delegar a otros usuarios (opcional)",
+                    delegables,
+                    default=[u for u in pre_otros if u in delegables],
+                    key="cas_edit_del_users"
+                )
+
+                delegados_sel = []
+                for n in sel_colab:
+                    u = colab_nombre_to_user.get(n, "")
+                    if u:
+                        delegados_sel.append(u)
+                delegados_sel.extend([u for u in sel_users_extra if u])
+
+                seen = set()
+                delegados_sel = [x for x in delegados_sel if not (x in seen or seen.add(x))]
 
             submit = st.form_submit_button("Guardar cambios", disabled=is_readonly)
 
         if submit:
             idx = df_casos.index[df_casos["Expediente"] == exp_sel][0]
+
+            num_delegados = len(delegados_sel) if delegacion_activa else 0
+
             df_casos.loc[idx, [
                 "Cliente","Abogado","Año","Materia","Instancia","Pretension",
                 "Juzgado","DistritoJudicial","Contraparte","ContraparteDoc","Observaciones","EstadoCaso",
@@ -2034,7 +2095,7 @@ if menu == "Casos":
                 int(num_abogados) if defensa_conjunta else 1,
                 " | ".join([a for a in abogados_extra if str(a).strip() != ""]),
                 "1" if delegacion_activa else "0",
-                int(num_delegados) if delegacion_activa else 0,
+                int(num_delegados),
                 " | ".join([d for d in delegados_sel if str(d).strip() != ""]),
             ]
 
