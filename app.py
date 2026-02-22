@@ -987,191 +987,202 @@ menu = st.sidebar.radio("📌 Menú", menu_items)
 # ==========================================================
 brand_header()
 
-# ==========================================================
-# DASHBOARD COMPLETO (ROBUSTO: suma honorarios y litis, pendiente correcto)
-# ==========================================================
 if menu == "Dashboard":
+    st.subheader("📊 Dashboard")
 
-    # =========================
-    # Helpers locales (seguros)
-    # =========================
-    def _to_num(s):
-        return pd.to_numeric(s, errors="coerce").fillna(0.0)
+    # ==========================================================
+    # 1) 📅 ACTUACIONES – CALENDARIO/AGENDA CON SEMÁFORO (VISUAL)
+    # ==========================================================
+    st.markdown("## 📅 Agenda de Actuaciones (Semáforo)")
 
-    def _norm(s):
-        return normalize_key(s)
-
-    # =========================
-    # Construir resumen por caso (sin depender del "último registro")
-    # =========================
-    rows = []
-    if casos.empty:
-        df_res = pd.DataFrame(columns=[
-            "Expediente","Cliente","Materia",
-            "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
-            "Cuota Litis Calculada","Pagado Litis","Saldo Litis"
-        ])
+    df_act = load_df("actuaciones")
+    if df_act is None or df_act.empty:
+        st.info("No hay actuaciones registradas.")
     else:
-        # Copias defensivas
-        h = honorarios.copy() if 'honorarios' in globals() else load_df("honorarios")
-        he = honorarios_etapas.copy() if 'honorarios_etapas' in globals() else load_df("honorarios_etapas")
-        ph = pagos_honorarios.copy() if 'pagos_honorarios' in globals() else load_df("pagos_honorarios")
+        import pandas as pd
+        from datetime import date, timedelta
 
-        cl = cuota_litis.copy() if 'cuota_litis' in globals() else load_df("cuota_litis")
-        pl = pagos_litis.copy() if 'pagos_litis' in globals() else load_df("pagos_litis")
+        # asegurar columnas típicas (sin romper si no existen)
+        for c in ["Caso","Cliente","Fecha","FechaProximaAccion","ProximaAccion","Resumen","TipoActuacion"]:
+            if c not in df_act.columns:
+                df_act[c] = ""
 
-        # Normalizar claves
-        for df in [h, he, ph, cl, pl]:
-            if df is not None and not df.empty and "Caso" in df.columns:
-                df["Caso"] = df["Caso"].apply(_norm)
+        df = df_act.copy()
+        df["Fecha_obj"] = pd.to_datetime(df["FechaProximaAccion"], errors="coerce")
+        df["Fecha_base"] = pd.to_datetime(df["Fecha"], errors="coerce")
+        df["Fecha_obj"] = df["Fecha_obj"].fillna(df["Fecha_base"])
+        df = df[df["Fecha_obj"].notna()].copy()
 
-        # Normalizar montos
-        if h is not None and not h.empty and "Monto Pactado" in h.columns:
-            h["Monto Pactado"] = _to_num(h["Monto Pactado"])
-        if he is not None and not he.empty and "Monto Pactado" in he.columns:
-            he["Monto Pactado"] = _to_num(he["Monto Pactado"])
-        if ph is not None and not ph.empty and "Monto" in ph.columns:
-            ph["Monto"] = _to_num(ph["Monto"])
-        if pl is not None and not pl.empty and "Monto" in pl.columns:
-            pl["Monto"] = _to_num(pl["Monto"])
-
-        # Cuota litis: calcular CuotaCalc por fila y sumar (todas)
-        if cl is not None and not cl.empty:
-            mb = "Monto Base" if "Monto Base" in cl.columns else None
-            pc = "Porcentaje" if "Porcentaje" in cl.columns else None
-            if mb is not None:
-                cl[mb] = _to_num(cl[mb])
-            else:
-                cl["Monto Base"] = 0.0
-                mb = "Monto Base"
-            if pc is not None:
-                cl[pc] = _to_num(cl[pc])
-            else:
-                cl["Porcentaje"] = 0.0
-                pc = "Porcentaje"
-            cl["CuotaCalc"] = cl[mb] * cl[pc] / 100.0
+        if df.empty:
+            st.info("No hay fechas válidas (Fecha o FechaProximaAccion) en actuaciones.")
         else:
-            cl = pd.DataFrame(columns=["Caso","CuotaCalc"])
+            hoy = pd.to_datetime(date.today())
 
-        # Armar resumen por expediente
-        for _, c in casos.iterrows():
-            exp = _norm(c.get("Expediente",""))
+            def semaforo(fecha):
+                if fecha < hoy:
+                    return "🔴 Vencida"
+                elif fecha <= (hoy + pd.Timedelta(days=7)):
+                    return "🟠 Próxima (<=7 días)"
+                else:
+                    return "🟢 Programada"
 
-            # 1) Honorario pactado:
-            #    Si existen honorarios por etapa, sumarlos; si no, sumar todos los honorarios totales.
-            pactado = 0.0
-            if he is not None and not he.empty:
-                sub_et = he[he["Caso"] == exp]
-                if not sub_et.empty:
-                    pactado = float(sub_et["Monto Pactado"].sum())
+            df["Semáforo"] = df["Fecha_obj"].apply(semaforo)
+            df["Fecha"] = df["Fecha_obj"].dt.date
 
-            if pactado == 0.0 and h is not None and not h.empty:
-                sub_h = h[h["Caso"] == exp]
-                pactado = float(sub_h["Monto Pactado"].sum()) if not sub_h.empty else 0.0
+            # Filtro rápido
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                rango = st.selectbox("Rango", ["Próx. 30 días", "Este mes", "Todo"], index=0, key="dash_act_rango")
+            with c2:
+                q = st.text_input("Buscar", "", key="dash_act_buscar").strip().lower()
 
-            # 2) Pagos honorarios (sumar todos)
-            pagado_h = 0.0
-            if ph is not None and not ph.empty:
-                sub_ph = ph[ph["Caso"] == exp]
-                pagado_h = float(sub_ph["Monto"].sum()) if not sub_ph.empty else 0.0
+            view = df.copy()
+            if rango == "Próx. 30 días":
+                view = view[(view["Fecha"] >= date.today()) & (view["Fecha"] <= (date.today() + timedelta(days=30)))]
+            elif rango == "Este mes":
+                m = date.today().month
+                y = date.today().year
+                view = view[pd.to_datetime(view["Fecha"]).dt.month.eq(m) & pd.to_datetime(view["Fecha"]).dt.year.eq(y)]
 
-            # 3) Cuota litis calculada (sumar todas)
-            calc_litis = 0.0
-            if cl is not None and not cl.empty and "CuotaCalc" in cl.columns:
-                sub_cl = cl[cl["Caso"] == exp]
-                calc_litis = float(sub_cl["CuotaCalc"].sum()) if not sub_cl.empty else 0.0
+            if q:
+                mask = (
+                    view["Caso"].astype(str).str.lower().str.contains(q, na=False) |
+                    view["Cliente"].astype(str).str.lower().str.contains(q, na=False) |
+                    view["Resumen"].astype(str).str.lower().str.contains(q, na=False) |
+                    view["ProximaAccion"].astype(str).str.lower().str.contains(q, na=False) |
+                    view["TipoActuacion"].astype(str).str.lower().str.contains(q, na=False)
+                )
+                view = view[mask]
 
-            # 4) Pagos litis (sumar todos)
-            pagado_l = 0.0
-            if pl is not None and not pl.empty:
-                sub_pl = pl[pl["Caso"] == exp]
-                pagado_l = float(sub_pl["Monto"].sum()) if not sub_pl.empty else 0.0
+            view = view.sort_values("Fecha_obj", ascending=True)
 
-            # 5) Pendientes (nunca negativos)
-            pend_h = max(0.0, pactado - pagado_h)
-            pend_l = max(0.0, calc_litis - pagado_l)
+            # Color por semáforo
+            def color_row(row):
+                s = str(row.get("Semáforo",""))
+                if "🔴" in s:
+                    return ["background-color:#ffcccc"] * len(row)
+                if "🟠" in s:
+                    return ["background-color:#ffe5b4"] * len(row)
+                if "🟢" in s:
+                    return ["background-color:#d6f5d6"] * len(row)
+                return [""] * len(row)
 
-            rows.append([
-                exp,
-                c.get("Cliente",""),
-                c.get("Materia",""),
-                float(pactado),
-                float(pagado_h),
-                float(pend_h),
-                float(calc_litis),
-                float(pagado_l),
-                float(pend_l)
-            ])
-
-        df_res = pd.DataFrame(rows, columns=[
-            "Expediente","Cliente","Materia",
-            "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
-            "Cuota Litis Calculada","Pagado Litis","Saldo Litis"
-        ])
-
-    # =========================
-    # Estado de cuotas (vencidas / por vencer) - se mantiene igual que lo tenías
-    # =========================
-    df_estado = cuotas_status_all()
-
-    # =========================
-    # Totales para métricas
-    # =========================
-    total_pactado = df_res["Honorario Pactado"].sum() if not df_res.empty else 0
-    total_pagado_h = df_res["Honorario Pagado"].sum() if not df_res.empty else 0
-    total_pend_h = df_res["Honorario Pendiente"].sum() if not df_res.empty else 0
-
-    total_litis = df_res["Cuota Litis Calculada"].sum() if not df_res.empty else 0
-    total_pagado_l = df_res["Pagado Litis"].sum() if not df_res.empty else 0
-    total_pend_l = df_res["Saldo Litis"].sum() if not df_res.empty else 0
-
-    # =========================
-    # UI
-    # =========================
-    st.subheader("📊 Dashboard General")
-
-    r1c1, r1c2, r1c3 = st.columns(3)
-    r1c1.metric("👥 Clientes", f"{len(clientes)}")
-    r1c2.metric("👨‍⚖️ Abogados", f"{len(abogados)}")
-    r1c3.metric("📁 Casos", f"{len(casos)}")
-
-    st.markdown("### 💰 Indicadores Económicos")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Honorarios pactados (S/)", f"{total_pactado:,.2f}")
-    c2.metric("Honorarios pagados (S/)", f"{total_pagado_h:,.2f}")
-    c3.metric("Honorarios pendientes (S/)", f"{total_pend_h:,.2f}")
-
-    c4, c5, c6 = st.columns(3)
-    c4.metric("Cuota litis calculada (S/)", f"{total_litis:,.2f}")
-    c5.metric("Cuota litis pagada (S/)", f"{total_pagado_l:,.2f}")
-    c6.metric("Cuota litis pendiente (S/)", f"{total_pend_l:,.2f}")
+            cols_show = [c for c in ["Fecha","Semáforo","Caso","Cliente","TipoActuacion","Resumen","ProximaAccion"] if c in view.columns]
+            st.dataframe(view[cols_show].style.apply(color_row, axis=1), use_container_width=True)
 
     st.divider()
-    st.markdown("### 📌 Detalle por caso")
-    st.dataframe(df_res, use_container_width=True)
 
-    st.divider()
-    st.markdown("### 📅 Cuotas vencidas / por vencer")
-    if df_estado is None or df_estado.empty or "SaldoCuota" not in df_estado.columns:
-        st.info("Aún no hay cronograma calculable.")
+    # ==========================================================
+    # 2) 🚦 SEMÁFORO DE MOROSOS / PENDIENTES (VISUAL)
+    #    Solo Admin / Personal Administrativo (financiero)
+    # ==========================================================
+    st.markdown("## 🚦 Semáforo de Morosos / Pendientes de Pago")
+
+    rol = str(st.session_state.get("rol","")).strip().lower()
+    if rol not in ["admin", "personal administrativo"]:
+        st.info("🔒 No tienes acceso a este panel (solo Admin / Personal Administrativo).")
     else:
-        df_estado = df_estado.copy()
-        df_estado["SaldoCuota"] = pd.to_numeric(df_estado["SaldoCuota"], errors="coerce").fillna(0.0)
+        import pandas as pd
+        from datetime import date
 
-        df_pend = df_estado[df_estado["SaldoCuota"] > 0].copy()
-        vencidas = df_pend[df_pend["DiasParaVencimiento"].notna() & (df_pend["DiasParaVencimiento"] < 0)]
-        por_vencer = df_pend[df_pend["DiasParaVencimiento"].notna() & (df_pend["DiasParaVencimiento"].between(0, 7))]
+        # intentamos usar tu resumen financiero
+        try:
+            df_res = resumen_financiero_df()
+        except Exception:
+            df_res = pd.DataFrame()
 
-        st.markdown("**Vencidas**")
-        st.dataframe(vencidas, use_container_width=True)
-        st.markdown("**Por vencer (7 días)**")
-        st.dataframe(por_vencer, use_container_width=True)
+        # cuotas para detectar vencidos (si existe)
+        df_cuotas = load_df("cuotas")
+        if df_cuotas is None:
+            df_cuotas = pd.DataFrame()
 
-    st.download_button(
-        "⬇️ Descargar reporte casos (CSV)",
-        df_res.to_csv(index=False).encode("utf-8"),
-        "reporte_casos.csv"
-    )
+        hoy = pd.to_datetime(date.today())
+
+        # calcular vencidos y próximos por caso/expediente
+        vencidos_por = {}
+        proximos_por = {}
+        if not df_cuotas.empty and "Caso" in df_cuotas.columns and "FechaVenc" in df_cuotas.columns:
+            tmp = df_cuotas.copy()
+            tmp["FechaVenc_dt"] = pd.to_datetime(tmp["FechaVenc"], errors="coerce")
+            tmp = tmp[tmp["FechaVenc_dt"].notna()].copy()
+
+            venc = tmp[tmp["FechaVenc_dt"] < hoy].groupby("Caso").size().to_dict()
+            prox = tmp[(tmp["FechaVenc_dt"] >= hoy) & (tmp["FechaVenc_dt"] <= (hoy + pd.Timedelta(days=7)))].groupby("Caso").size().to_dict()
+
+            vencidos_por = {str(k): int(v) for k, v in venc.items()}
+            proximos_por = {str(k): int(v) for k, v in prox.items()}
+
+        if df_res is None or df_res.empty:
+            st.warning("No hay resumen financiero disponible; semáforo usando solo cuotas (si existen).")
+            if not vencidos_por and not proximos_por:
+                st.info("No hay datos suficientes para morosidad.")
+            else:
+                filas = []
+                for caso, n in vencidos_por.items():
+                    filas.append({"Caso": caso, "Vencidos": n, "Próximos(<=7d)": proximos_por.get(caso, 0)})
+                dfm = pd.DataFrame(filas).fillna(0)
+                dfm["Semáforo"] = dfm["Vencidos"].apply(lambda x: "🔴 Moroso" if int(x) > 0 else "🟠 Pendiente")
+
+                def color_row(row):
+                    s = str(row.get("Semáforo",""))
+                    if "🔴" in s:
+                        return ["background-color:#ffcccc"] * len(row)
+                    if "🟠" in s:
+                        return ["background-color:#ffe5b4"] * len(row)
+                    return [""] * len(row)
+
+                st.dataframe(dfm.style.apply(color_row, axis=1), use_container_width=True)
+        else:
+            base = df_res.copy()
+
+            # columnas esperadas
+            for col in ["Honorario Pendiente", "Saldo Litis"]:
+                if col not in base.columns:
+                    base[col] = 0
+
+            base["Honorario Pendiente"] = pd.to_numeric(base["Honorario Pendiente"], errors="coerce").fillna(0)
+            base["Saldo Litis"] = pd.to_numeric(base["Saldo Litis"], errors="coerce").fillna(0)
+            base["SaldoTotal"] = base["Honorario Pendiente"] + base["Saldo Litis"]
+
+            # clave caso/expediente
+            key = "Expediente" if "Expediente" in base.columns else ("Caso" if "Caso" in base.columns else None)
+            if key:
+                base["Vencidos"] = base[key].astype(str).map(lambda x: vencidos_por.get(str(x), 0))
+                base["Próximos(<=7d)"] = base[key].astype(str).map(lambda x: proximos_por.get(str(x), 0))
+            else:
+                base["Vencidos"] = 0
+                base["Próximos(<=7d)"] = 0
+
+            def sem(row):
+                saldo = float(row.get("SaldoTotal", 0))
+                venc = int(row.get("Vencidos", 0))
+                prox = int(row.get("Próximos(<=7d)", 0))
+                if saldo <= 0:
+                    return "🟢 Al día"
+                if venc > 0:
+                    return "🔴 Moroso"
+                if prox > 0 or saldo > 0:
+                    return "🟠 Pendiente"
+                return "🟢 Al día"
+
+            base["Semáforo"] = base.apply(sem, axis=1)
+
+            order = {"🔴 Moroso": 0, "🟠 Pendiente": 1, "🟢 Al día": 2}
+            base["_ord"] = base["Semáforo"].map(lambda x: order.get(str(x), 9))
+            base = base.sort_values(["_ord","SaldoTotal"], ascending=[True, False]).drop(columns=["_ord"], errors="ignore")
+
+            def color_row(row):
+                s = str(row.get("Semáforo",""))
+                if "🔴" in s:
+                    return ["background-color:#ffcccc"] * len(row)
+                if "🟠" in s:
+                    return ["background-color:#ffe5b4"] * len(row)
+                if "🟢" in s:
+                    return ["background-color:#d6f5d6"] * len(row)
+                return [""] * len(row)
+
+            cols = [c for c in ["Semáforo","Cliente","Expediente","Caso","SaldoTotal","Honorario Pendiente","Saldo Litis","Vencidos","Próximos(<=7d)"] if c in base.columns]
+            st.dataframe(base[cols].style.apply(color_row, axis=1), use_container_width=True)
 # ==========================================================
 # FICHA DEL CASO (CON DESCARGA WORD)
 # ==========================================================
