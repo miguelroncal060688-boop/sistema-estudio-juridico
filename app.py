@@ -3286,86 +3286,176 @@ except Exception:
 
 
 # ==========================================================
-# MARCA 006 – MENÚS EXTENDIDOS (Abogados/Casos/Instancias)
+# INSTANCIAS (REGISTRAR / EDITAR / BORRAR)
+# + Instancia Administrativa con Cosa Decidida
 # ==========================================================
-try:
-    if 'menu' in globals() and menu == 'Abogados (Extendido)':
-        st.subheader('👨‍⚖️ Abogados (Extendido)')
-        df_extra = load_df('abogados')  # ya con nuevas columnas por schema
-        if abogados.empty:
-            st.info('No hay abogados registrados.')
+if menu == "Instancias":
+    st.subheader("⚖️ Instancias del Caso")
+
+    if casos.empty:
+        st.info("Primero registra casos.")
+    else:
+        exp = st.selectbox("Expediente", casos["Expediente"].tolist(), key="inst_exp")
+        exp_n = normalize_key(exp)
+
+        df_i = instancias.copy()
+        df_i["Caso"] = df_i["Caso"].apply(normalize_key)
+
+        sub = df_i[df_i["Caso"] == exp_n].copy()
+
+        # =========================
+        # LISTADO
+        # =========================
+        st.markdown("### Instancias registradas")
+        if sub.empty:
+            st.info("No hay instancias registradas para este expediente.")
         else:
-            sel = st.selectbox('Abogado ID', abogados['ID'].tolist())
-            fila = abogados[abogados['ID'] == sel].iloc[0]
-            st.markdown('### Campos adicionales')
-            colegio = st.text_input('Colegio Profesional', value=str(fila.get('ColegioProfesional','')))
-            distrito = st.text_input('Distrito Judicial', value=str(fila.get('DistritoJudicial','')))
-            referencia = st.text_input('Referencia Domicilio Procesal', value=str(fila.get('ReferenciaDomicilio','')))
-            notas = st.text_area('Notas', value=str(fila.get('Notas','')), height=140)
-            if st.button('💾 Guardar campos extendidos', disabled=_is_readonly()):
-                idx = abogados.index[abogados['ID'] == sel][0]
-                abogados.loc[idx, ['ColegioProfesional','DistritoJudicial','ReferenciaDomicilio','Notas']] = [colegio,distrito,referencia,notas]
-                save_df('abogados', abogados)
-                _audit_log('UPDATE','abogados',sel,'extendido')
-                st.success('✅ Guardado')
+            st.dataframe(
+                sub.sort_values("ID", ascending=False),
+                use_container_width=True
+            )
+
+        st.divider()
+
+        # =========================
+        # REGISTRAR NUEVA
+        # =========================
+        st.markdown("### ➕ Registrar instancia")
+
+        with st.form("inst_new_form"):
+            tipo = st.selectbox(
+                "Tipo de instancia",
+                [
+                    "Instancia Administrativa",
+                    "Primera Instancia",
+                    "Segunda Instancia",
+                    "Casación",
+                    "Otros"
+                ]
+            )
+
+            estado = st.text_input("Estado actual")
+            resultado = st.text_input("Resultado")
+            accion = st.text_input("Acción / Próximo paso")
+            honorarios = st.number_input("Honorarios (S/)", min_value=0.0, step=100.0)
+
+            # ---- SOLO ADMINISTRATIVA ----
+            sede_admin = ""
+            cosa_decidida = "0"
+            fecha_cosa = ""
+
+            if tipo == "Instancia Administrativa":
+                st.markdown("**Datos de instancia administrativa**")
+                sede_admin = st.text_input("Sede Administrativa")
+                cosa = st.checkbox("¿Adquirió calidad de Cosa Decidida?")
+                cosa_decidida = "1" if cosa else "0"
+                if cosa:
+                    fecha_cosa = st.text_input("Fecha de cosa decidida (YYYY-MM-DD)")
+
+            submit = st.form_submit_button("Guardar instancia")
+
+            if submit:
+                new_id = next_id(instancias)
+                instancias = add_row(instancias, {
+                    "ID": new_id,
+                    "Caso": exp_n,
+                    "TipoInstancia": tipo,
+                    "EstadoActual": estado,
+                    "Resultado": resultado,
+                    "Accion": accion,
+                    "Honorarios": float(honorarios),
+                    "SedeAdministrativa": sede_admin,
+                    "CosaDecidida": cosa_decidida,
+                    "FechaCosaDecidida": fecha_cosa
+                }, "instancias")
+                save_df("instancias", instancias)
+                st.success("✅ Instancia registrada")
                 st.rerun()
 
-    if 'menu' in globals() and menu == 'Casos (Extendido)':
-        st.subheader('📁 Casos (Extendido)')
-        if casos.empty:
-            st.info('No hay casos registrados.')
-        else:
-            exp = st.selectbox('Expediente', casos['Expediente'].tolist())
-            fila = casos[casos['Expediente'] == exp].iloc[0]
-            st.markdown('### Datos judiciales')
-            juzgado = st.text_input('Juzgado', value=str(fila.get('Juzgado','')))
-            distrito = st.text_input('Distrito Judicial', value=str(fila.get('DistritoJudicial','')))
-            contraparte = st.text_input('Contraparte', value=str(fila.get('Contraparte','')))
-            doc = st.text_input('DNI/RUC Contraparte', value=str(fila.get('ContraparteDoc','')))
-            if st.button('💾 Guardar datos judiciales', disabled=_is_readonly()):
-                idx = casos.index[casos['Expediente'] == exp][0]
-                casos.loc[idx, ['Juzgado','DistritoJudicial','Contraparte','ContraparteDoc']] = [juzgado,distrito,contraparte,doc]
-                save_df('casos', casos)
-                _audit_log('UPDATE','casos',exp,'datos judiciales')
-                st.success('✅ Guardado')
-                st.rerun()
+        st.divider()
 
-    if 'menu' in globals() and menu == 'Instancias':
-        st.subheader('📑 Instancias del Caso')
-        df_i = load_df('instancias')
-        if casos.empty:
-            st.info('No hay casos registrados.')
-        else:
-            exp = st.selectbox('Expediente', casos['Expediente'].tolist(), key='instancias_exp')
-            sub = df_i[df_i['Caso'].astype(str) == str(exp)].copy()
-            st.markdown('### Registradas')
-            st.dataframe(sub.sort_values('ID', ascending=False), use_container_width=True)
-            st.divider()
-            st.markdown('### Registrar')
-            tipo = st.selectbox('Tipo de instancia', ['Actuación Administrativa','Primera Instancia','Segunda Instancia','Casación','Otros'])
-            estado = st.text_input('Estado actual')
-            resultado = st.text_input('Resultado')
-            accion = st.text_input('Acción')
-            honor = st.number_input('Honorarios (S/)', min_value=0.0, step=100.0)
-            if st.button('💾 Guardar instancia', disabled=_is_readonly()):
-                new_id = next_id(df_i)
-                df_i = add_row(df_i, {
-                    'ID': new_id,
-                    'Caso': normalize_key(exp),
-                    'TipoInstancia': tipo,
-                    'EstadoActual': estado,
-                    'Resultado': resultado,
-                    'Accion': accion,
-                    'Honorarios': float(honor),
-                    'FechaRegistro': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                }, 'instancias')
-                save_df('instancias', df_i)
-                _audit_log('ADD','instancias',new_id,f'{exp}|{tipo}')
-                st.success('✅ Instancia guardada')
-                st.rerun()
-except Exception:
-    pass
+        # =========================
+        # EDITAR / BORRAR
+        # =========================
+        st.markdown("### ✏️ Editar / borrar instancia")
 
+        if not sub.empty:
+            sel_id = st.selectbox("Instancia ID", sub["ID"].tolist(), key="inst_edit_id")
+            fila = df_i[df_i["ID"] == sel_id].iloc[0]
+
+            with st.form("inst_edit_form"):
+                tipo_e = st.selectbox(
+                    "Tipo de instancia",
+                    [
+                        "Instancia Administrativa",
+                        "Primera Instancia",
+                        "Segunda Instancia",
+                        "Casación",
+                        "Otros"
+                    ],
+                    index=[
+                        "Instancia Administrativa",
+                        "Primera Instancia",
+                        "Segunda Instancia",
+                        "Casación",
+                        "Otros"
+                    ].index(fila.get("TipoInstancia","Otros"))
+                )
+
+                estado_e = st.text_input("Estado actual", value=str(fila.get("EstadoActual","")))
+                resultado_e = st.text_input("Resultado", value=str(fila.get("Resultado","")))
+                accion_e = st.text_input("Acción", value=str(fila.get("Accion","")))
+                honor_e = st.number_input(
+                    "Honorarios (S/)",
+                    min_value=0.0,
+                    value=float(pd.to_numeric(fila.get("Honorarios",0), errors="coerce") or 0.0),
+                    step=100.0
+                )
+
+                sede_admin_e = fila.get("SedeAdministrativa","")
+                cosa_decidida_e = fila.get("CosaDecidida","0") == "1"
+                fecha_cosa_e = fila.get("FechaCosaDecidida","")
+
+                if tipo_e == "Instancia Administrativa":
+                    st.markdown("**Datos de instancia administrativa**")
+                    sede_admin_e = st.text_input("Sede Administrativa", value=str(sede_admin_e))
+                    cosa_decidida_e = st.checkbox(
+                        "¿Cosa Decidida?",
+                        value=cosa_decidida_e
+                    )
+                    if cosa_decidida_e:
+                        fecha_cosa_e = st.text_input(
+                            "Fecha de cosa decidida (YYYY-MM-DD)",
+                            value=str(fecha_cosa_e)
+                        )
+                    else:
+                        fecha_cosa_e = ""
+
+                submit_edit = st.form_submit_button("Guardar cambios")
+
+                if submit_edit:
+                    idx = instancias.index[instancias["ID"] == sel_id][0]
+                    instancias.loc[idx, [
+                        "TipoInstancia","EstadoActual","Resultado","Accion",
+                        "Honorarios","SedeAdministrativa",
+                        "CosaDecidida","FechaCosaDecidida"
+                    ]] = [
+                        tipo_e, estado_e, resultado_e, accion_e,
+                        float(honor_e), sede_admin_e,
+                        "1" if cosa_decidida_e else "0",
+                        fecha_cosa_e
+                    ]
+                    save_df("instancias", instancias)
+                    st.success("✅ Instancia actualizada")
+                    st.rerun()
+
+            st.warning("⚠️ Eliminar instancia (irreversible)")
+            confirm = st.text_input("Escribe ELIMINAR para confirmar", key="inst_del_confirm")
+            if st.button("🗑️ Eliminar instancia", disabled=confirm.strip().upper()!="ELIMINAR"):
+                instancias = instancias[instancias["ID"] != sel_id].copy()
+                save_df("instancias", instancias)
+                st.success("✅ Instancia eliminada")
+                st.rerun()
 
 # ==========================================================
 # MARCA 006 – CLIENTES (Extendido): Natural/Jurídico + Emergencia
