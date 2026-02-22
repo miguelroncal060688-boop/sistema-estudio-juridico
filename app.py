@@ -839,8 +839,52 @@ def reset_total(borrar_archivos=False):
 # ==========================================================
 st.sidebar.markdown(f"### 🏷️ {APP_VERSION}")
 
-# -------- USUARIO EN SESIÓN (se mantiene simple aquí) --------
-st.sidebar.write(f"👤 Usuario: {st.session_state.usuario} ({st.session_state.rol})")
+# -------- IDENTIDAD DE USUARIO (ABOGADO / COLABORADOR) --------
+usr = str(st.session_state.get("usuario","")).strip()
+rol_raw = str(st.session_state.get("rol","")).strip()
+rol = rol_raw.lower()
+
+display_user = usr
+
+try:
+    # ----- ABOGADO -----
+    if rol == "abogado":
+        u_df = load_df("usuarios")
+        a_df = load_df("abogados")
+
+        if u_df is not None and not u_df.empty:
+            fila_u = u_df[u_df["Usuario"].astype(str) == usr]
+            if not fila_u.empty:
+                ab_id = str(fila_u.iloc[0].get("AbogadoID","")).strip()
+
+                # normalizar 1.0 -> 1
+                try:
+                    if "." in ab_id:
+                        ab_id = str(int(float(ab_id)))
+                except Exception:
+                    pass
+
+                if a_df is not None and not a_df.empty and "ID" in a_df.columns:
+                    fila_a = a_df[a_df["ID"].astype(str).str.strip() == ab_id]
+                    if not fila_a.empty:
+                        nombre_ab = str(fila_a.iloc[0].get("Nombre","")).strip()
+                        if nombre_ab:
+                            display_user = f"{usr}_{nombre_ab}"
+
+    # ----- COLABORADOR -----
+    elif rol in ["personal administrativo", "secretaria/o", "practicante"]:
+        c_df = load_df("colaboradores")
+        if c_df is not None and not c_df.empty:
+            fila_c = c_df[c_df["Usuario"].astype(str) == usr]
+            if not fila_c.empty:
+                nombre_col = str(fila_c.iloc[0].get("Nombre","")).strip()
+                if nombre_col:
+                    display_user = f"{usr}_{nombre_col}"
+
+except Exception:
+    pass  # fallback silencioso, nunca rompe el sidebar
+
+st.sidebar.write(f"👤 Usuario: {display_user} ({rol_raw})")
 
 # -------- CERRAR SESIÓN --------
 if st.sidebar.button("Cerrar sesión"):
@@ -895,7 +939,7 @@ menu_items = [
     "Auditoría",
 ]
 
-# ✅ NUEVO: Colaboradores SOLO para ADMIN
+# ✅ Colaboradores SOLO para ADMIN
 if rol == "admin":
     menu_items.insert(menu_items.index("Usuarios") + 1, "Colaboradores")
 
@@ -936,8 +980,6 @@ elif rol == "solo lectura":
         m for m in menu_items
         if m in ["Casos", "Documentos"]
     ]
-
-# Admin / Personal Administrativo ve todo (incluye Colaboradores)
 
 menu = st.sidebar.radio("📌 Menú", menu_items)
 # ==========================================================
