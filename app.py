@@ -194,39 +194,40 @@ FILES = {
     "permisos": "permisos.csv",
 }
 # ==========================================================
-# ESQUEMAS
+# SCHEMAS
 # ==========================================================
 SCHEMAS = {
-    # ======================
-    # USUARIOS / SEGURIDAD
-    # ======================
-    "usuarios": ["Usuario","PasswordHash","Rol","AbogadoID","Activo","Creado"],
-
-    # ✅ NUEVO – ROLES Y PERMISOS
-    "permisos": ["Rol","Ver","Agregar","Modificar","Borrar"],
-
-    # ======================
-    # ENTIDADES PRINCIPALES
-    # ======================
-    "clientes": [
-        "ID","TipoCliente","Nombre","DNI","Celular","Correo","Direccion",
-        "Observaciones","ContactoEmergencia","CelularEmergencia",
-        "RazonSocial","RUC","RepresentanteLegal",
-        "PartidaElectronica","SedeRegistral"
+    # --- EXISTENTES ---
+    "usuarios": [
+        "Usuario","PasswordHash","Rol","AbogadoID",
+        "Activo","Creado","NombreCompleto","DNI"
     ],
 
     "abogados": [
-        "ID","Nombre","DNI","Celular","Correo","Colegiatura",
-        "ColegioProfesional","Domicilio Procesal","ReferenciaDomicilio",
-        "Casilla Electronica","DistritoJudicial","Casilla Judicial","Notas"
+        "ID","Nombre","DNI","Colegiatura",
+        "Celular","Correo","Activo","Observaciones"
     ],
 
     "casos": [
-        "ID","Cliente","Abogado","Expediente","Año","Materia","Instancia",
-        "Pretension","Juzgado","DistritoJudicial",
-        "Contraparte","ContraparteDoc",
-        "Observaciones","EstadoCaso","FechaInicio"
+        "ID","Expediente","Cliente","Abogado",
+        "Materia","EstadoCaso","Instancia",
+        "Contraparte","DistritoJudicial",
+        "AbogadosExtra","Delegados","Observaciones"
     ],
+
+    # ... (los demás que ya tienes)
+
+    # ✅ NUEVO: COLABORADORES
+    "colaboradores": [
+        "ID",
+        "Nombre",
+        "DNI",
+        "Tipo",
+        "Usuario",
+        "Activo",
+        "Observaciones",
+    ],
+}
 
     # ======================
     # HONORARIOS / PAGOS
