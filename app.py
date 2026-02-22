@@ -3473,15 +3473,12 @@ if menu == "Usuarios":
     # ---------- NUEVO ----------
     if accion_u == "Nuevo":
         with st.form("usr_new"):
-            # 1) Rol primero
             rol = st.selectbox("Rol", ROLES_DISPONIBLES, key="usr_new_role")
 
-            # 2) Credenciales siempre
             usuario = st.text_input("Usuario", key="usr_new_user")
             pwd = st.text_input("Contraseña", type="password", key="usr_new_pwd")
             pwd2 = st.text_input("Repetir contraseña", type="password", key="usr_new_pwd2")
 
-            # 3) Datos según rol
             abogado_id = ""
             nombre_completo = ""
             dni_personal = ""
@@ -3490,7 +3487,6 @@ if menu == "Usuarios":
                 st.markdown("### 👨‍⚖️ Abogado asociado (obligatorio)")
                 if not abogado_opts:
                     st.error("❌ No hay abogados registrados para asociar. Registra abogados primero.")
-                # ✅ placeholder para evitar asignación automática al primero
                 abogado_id = st.selectbox(
                     "Selecciona abogado",
                     options=[""] + abogado_opts,
@@ -3518,8 +3514,6 @@ if menu == "Usuarios":
                 if pwd != pwd2:
                     st.error("Las contraseñas no coinciden.")
                     st.stop()
-
-                # ✅ CRUCIAL: abogado antes de guardar, y debe ser distinto a placeholder ""
                 if rol == "Abogado" and not str(abogado_id).strip():
                     st.error("Debes seleccionar un abogado asociado (obligatorio).")
                     st.stop()
@@ -3541,7 +3535,6 @@ if menu == "Usuarios":
                 else:
                     st.success("✅ Usuario creado")
 
-                # IMPORTANTE: NO tocamos st.session_state de widgets (evita StreamlitAPIException)
                 st.rerun()
 
     # ---------- EDITAR ----------
@@ -3642,9 +3635,23 @@ if menu == "Usuarios":
                 usuarios["Usuario"].astype(str).tolist(),
                 key="usr_del_sel"
             )
+
             st.warning("⚠️ Esta acción no se puede deshacer")
             confirm = st.text_input("Escribe ELIMINAR para confirmar", key="usr_del_confirm")
-            if st.button("🗑️ Eliminar usuario", key="usr_del_btn", disabled=confirm.strip().upper() != "ELIMINAR"):
+
+            # ✅ NUEVO: NO borrar admin jamás, ni el usuario logueado
+            usuario_actual = str(st.session_state.get("usuario","")).strip()
+            no_borrable = str(sel_user).strip().lower() == "admin"
+            mismo_usuario = str(sel_user).strip() == usuario_actual
+
+            if no_borrable:
+                st.error("❌ No se puede eliminar el usuario 'admin' (protegido).")
+            if mismo_usuario:
+                st.error("❌ No puedes eliminar tu propio usuario mientras estás logueado.")
+
+            disabled_delete = (confirm.strip().upper() != "ELIMINAR") or no_borrable or mismo_usuario
+
+            if st.button("🗑️ Eliminar usuario", key="usr_del_btn", disabled=disabled_delete):
                 usuarios = usuarios[usuarios["Usuario"].astype(str) != str(sel_user)].copy()
                 save_df("usuarios", usuarios)
                 st.success("✅ Usuario eliminado")
@@ -3652,12 +3659,28 @@ if menu == "Usuarios":
 
     st.divider()
 
-    # Mostrar relación usuario→abogado
+    # ✅ Mostrar relación usuario→abogado correctamente (soporta 1, 1.0, "1")
+    def _norm_abogado_id(x):
+        s = str(x).strip()
+        if s == "" or s.lower() in ["nan", "none"]:
+            return ""
+        try:
+            if "." in s:
+                return str(int(float(s)))
+        except Exception:
+            pass
+        try:
+            return str(int(s))
+        except Exception:
+            return s
+
     df_show = usuarios.drop(columns=["PasswordHash"], errors="ignore").copy()
     if "AbogadoID" in df_show.columns:
-        df_show["AbogadoAsociado"] = df_show["AbogadoID"].astype(str).map(
+        df_show["AbogadoID"] = df_show["AbogadoID"].apply(_norm_abogado_id)
+        df_show["AbogadoAsociado"] = df_show["AbogadoID"].apply(
             lambda x: abogado_label.get(str(x), "") if str(x).strip() else ""
         )
+
     st.dataframe(df_show, use_container_width=True)
 # ==========================================================
 # REPORTES (FILTRADOS POR ROL)
