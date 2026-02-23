@@ -809,6 +809,156 @@ menu = st.sidebar.radio("📌 Menú", menu_items)
 brand_header()
 
 # ==========================================================
+# FINANZAS (DEBE IR ANTES DE USARSE EN FICHA/CRONOGRAMA/REPORTES)
+# ==========================================================
+def gastos_actuaciones_por_caso():
+    if 'actuaciones' not in globals() or actuaciones is None or actuaciones.empty:
+        return pd.DataFrame(columns=["Caso", "GastosActuaciones"])
+
+    df = actuaciones.copy()
+    df["Caso"] = df["Caso"].apply(normalize_key)
+    df["CostasAranceles"] = pd.to_numeric(df.get("CostasAranceles", 0), errors="coerce").fillna(0.0)
+    df["Gastos"] = pd.to_numeric(df.get("Gastos", 0), errors="coerce").fillna(0.0)
+    df["GastosActuaciones"] = df["CostasAranceles"] + df["Gastos"]
+    return df.groupby("Caso", as_index=False)["GastosActuaciones"].sum()
+
+
+def resumen_financiero_df():
+    if 'casos' not in globals() or casos is None or casos.empty:
+        return pd.DataFrame(columns=[
+            "Expediente","Cliente","Materia",
+            "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
+            "Cuota Litis Calculada","Pagado Litis","Saldo Litis",
+            "Gastos Actuaciones","Saldo Total"
+        ])
+
+    # Preparar cuota litis con cálculo por fila
+    cl = cuota_litis.copy() if 'cuota_litis' in globals() and cuota_litis is not None else pd.DataFrame()
+    if not cl.empty:
+        cl["Caso"] = cl["Caso"].apply(normalize_key)
+        cl["Monto Base"] = safe_float_series(cl.get("Monto Base", 0))
+        cl["Porcentaje"] = safe_float_series(cl.get("Porcentaje", 0))
+        cl["CuotaCalc"] = cl["Monto Base"] * cl["Porcentaje"] / 100.0
+    else:
+        cl = pd.DataFrame(columns=["Caso", "CuotaCalc"])
+
+    gastos_df = gastos_actuaciones_por_caso()
+    gastos_map = dict(zip(gastos_df["Caso"].astype(str), safe_float_series(gastos_df["GastosActuaciones"]).tolist())) if not gastos_df.empty else {}
+
+    rows = []
+    for _, c in casos.iterrows():
+        exp = normalize_key(c.get("Expediente",""))
+
+        # 1) Pactado honorarios: etapas si existen, si no total
+        sub_et = honorarios_etapas[honorarios_etapas["Caso"] == exp].copy() if 'honorarios_etapas' in globals() else pd.DataFrame()
+        if not sub_et.empty:
+            pactado = safe_float_series(sub_et.get("Monto Pactado", 0)).sum()
+        else:
+            sub_h = honorarios[honorarios["Caso"] == exp].copy() if 'honorarios' in globals() else pd.DataFrame()
+            pactado = safe_float_series(sub_h.get("Monto Pactado", 0)).sum()
+
+        # 2) Pagos honorarios
+        sub_ph = pagos_honorarios[pagos_honorarios["Caso"] == exp].copy() if 'pagos_honorarios' in globals() else pd.DataFrame()
+        pagado_h = safe_float_series(sub_ph.get("Monto", 0)).sum()
+
+        # 3) Cuota litis calculada
+        sub_cl = cl[cl["Caso"] == exp].copy()
+        calc = safe_float_series(sub_cl.get("CuotaCalc", 0)).sum()
+
+        # 4) Pagos litis
+        sub_pl = pagos_litis[pagos_litis["Caso"] == exp].copy() if 'pagos_litis' in globals() else pd.DataFrame()
+        pagado_l = safe_float_series(sub_pl.get("Monto", 0)).sum()
+
+        pend_h = max(0.0, float(pactado) - float(pagado_h))
+        pend_l = max(0.0, float(calc) - float(pagado_l))
+        gastos_act = float(gastos_map.get(exp, 0.0))
+
+        saldo_total = float(pend_h + pend_l)
+
+        rows.append([
+            exp, c.get("Cliente",""), c.get("Materia",""),
+            float(pactado), float(pagado_h), float(pend_h),
+            float(calc), float(pagado_l), float(pend_l),
+            float(gastos_act), float(saldo_total)
+        ])
+
+    return pd.DataFrame(rows, columns=[
+        "Expediente","Cliente","Materia",
+        "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
+        "Cuota Litis Calculada","Pagado Litis","Saldo Litis",
+        "Gastos Actuaciones","Saldo Total"
+    ])
+
+
+def cuotas_status_all():
+    if 'cuotas' not in globals() or cuotas is None or cuotas.empty:
+        return pd.DataFrame()
+
+    df = cuotas.copy()
+    df["Caso"] = df["Caso"].apply(normalize_key)
+    df["Monto"] = safe_float_series(df["Monto"])
+    df["FechaVenc_dt"] = df["FechaVenc"].apply(to_date_safe)
+
+    ph = pagos_honorarios.copy() if 'pagos_honorarios' in globals() and pagos_honorarios is not None else pd.DataFrame()
+    pl = pagos_litis.copy() if 'pagos_litis' in globals() and pagos_litis is not None else pd.DataFrame()
+
+    if not ph.empty:
+        ph["Caso"] = ph["Caso"].apply(normalize_key)
+        ph["Monto"] = safe_float_series(ph["Monto"])
+    if not pl.empty:
+        pl["Caso"] = pl["Caso"].apply(normalize_key)
+        pl["Monto"] = safe_float_series(pl["Monto"])
+
+    def calc_for_type(tipo, pagos_df):
+        sub = df[df["Tipo"] == tipo].copy()
+        if sub.empty:
+            return sub
+
+        sub["_sort_date"] = sub["FechaVenc_dt"].apply(lambda d: d if d else date(2100,1,1))
+        sub["NroCuota"] = pd.to_numeric(sub["NroCuota"], errors="coerce").fillna(0).astype(int)
+        sub.sort_values(["Caso","_sort_date","NroCuota"], inplace=True)
+
+        pagado_por_caso = pagos_df.groupby("Caso")["Monto"].sum().to_dict() if not pagos_df.empty else {}
+        remaining = {k: float(v) for k, v in pagado_por_caso.items()}
+
+        asignados, saldos, estados, dias = [], [], [], []
+        today = date.today()
+
+        for _, r in sub.iterrows():
+            caso = r["Caso"]
+            monto = float(r["Monto"])
+            venc = r["FechaVenc_dt"]
+
+            rem = remaining.get(caso, 0.0)
+            asign = min(rem, monto) if monto > 0 else 0.0
+            remaining[caso] = rem - asign
+            saldo = monto - asign
+
+            if monto == 0:
+                est = "Sin monto"
+            elif saldo <= 0.00001:
+                est = "Pagada"
+            elif asign > 0:
+                est = "Parcial"
+            else:
+                est = "Pendiente"
+
+            dv = None if venc is None else (venc - today).days
+            asignados.append(asign); saldos.append(saldo); estados.append(est); dias.append(dv)
+
+        sub["PagadoAsignado"] = asignados
+        sub["SaldoCuota"] = saldos
+        sub["Estado"] = estados
+        sub["DiasParaVencimiento"] = dias
+        sub.drop(columns=["_sort_date"], inplace=True, errors="ignore")
+        return sub
+
+    out_h = calc_for_type("Honorarios", ph)
+    out_l = calc_for_type("CuotaLitis", pl)
+    out = pd.concat([out_h, out_l], ignore_index=True) if (not out_h.empty or not out_l.empty) else pd.DataFrame()
+    return out
+
+# ==========================================================
 # DASHBOARD COMPLETO (ROBUSTO + VISUAL + DISCRIMINADO POR ROL)
 # ==========================================================
 if menu == "Dashboard":
