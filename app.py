@@ -196,9 +196,9 @@ FILES = {
 }
 # ==========================================================
 # SCHEMAS (FASE 1 — Seguridad y Control)
-# - NO destructivo
-# - Compatible con Fase 0
+# - NO destructivo (compatible con Fase 0)
 # - Permite permisos por ROL y por USUARIO
+# - Permite control fino del Dashboard
 # ==========================================================
 SCHEMAS = {
     # ======================
@@ -216,24 +216,27 @@ SCHEMAS = {
     ],
 
     # ======================
-    # PERMISOS POR ROL Y USUARIO
+    # PERMISOS (ROL / USUARIO)
     # ======================
     # Scope:
-    #   ROLE  -> aplica a un rol completo
-    #   USER  -> sobrescribe al rol para un usuario específico
+    #   ROLE -> aplica a un rol completo
+    #   USER -> sobrescribe al rol para un usuario específico
     #
     # ScopeID:
-    #   ROLE  -> nombre del rol (admin, abogado, etc.)
-    #   USER  -> nombre del usuario
+    #   ROLE -> nombre del rol (admin, abogado, secretaria, etc.)
+    #   USER -> nombre del usuario
     #
     "permisos": [
+        # Identidad del permiso
         "Scope",            # ROLE / USER
         "ScopeID",          # Rol o Usuario
-        # ---- Acciones base ----
+
+        # ---- Acciones base (CRUD) ----
         "Ver",
         "Agregar",
         "Modificar",
         "Borrar",
+
         # ---- Módulos ----
         "Casos",
         "Honorarios",
@@ -244,8 +247,11 @@ SCHEMAS = {
         "Documentos",
         "Usuarios",
         "Colaboradores",
+        "Instancias",
+        "Contratos",
         "Reportes",
-        # ---- Dashboard (por secciones) ----
+
+        # ---- Dashboard (global y por secciones) ----
         "Dashboard",
         "Dash_Indicadores",
         "Dash_Finanzas",
@@ -275,9 +281,14 @@ SCHEMAS = {
         "Materia","EstadoCaso","Instancia",
         "Contraparte","DistritoJudicial",
         "AbogadosExtra","Delegados","Observaciones",
-        # ✅ nuevos (no obligatorios)
-        "Año","Pretension","Juzgado","ContraparteDoc",
-        "DefensaConjunta","DelegacionActiva"
+
+        # ---- Campos ampliados (no obligatorios) ----
+        "Año",
+        "Pretension",
+        "Juzgado",
+        "ContraparteDoc",
+        "DefensaConjunta",
+        "DelegacionActiva"
     ],
 
     # ======================
@@ -302,7 +313,8 @@ SCHEMAS = {
     ],
 
     "pagos_litis": [
-        "ID","Caso","FechaPago","Monto","Observacion","ReciboEntregado"
+        "ID","Caso","FechaPago","Monto","Observacion",
+        "ReciboEntregado"
     ],
 
     "cuotas": [
@@ -367,7 +379,6 @@ SCHEMAS = {
         "Observaciones"
     ],
 }
-
 # ==========================================================
 # ensure_csv (FASE 0: NO destruye datos; guarda corrupto antes)
 # - NO recorta columnas
