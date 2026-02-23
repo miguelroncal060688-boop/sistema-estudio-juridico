@@ -195,15 +195,63 @@ FILES = {
     "permisos": "permisos.csv",
 }
 # ==========================================================
-# SCHEMAS
+# SCHEMAS (FASE 1 — Seguridad y Control)
+# - NO destructivo
+# - Compatible con Fase 0
+# - Permite permisos por ROL y por USUARIO
 # ==========================================================
 SCHEMAS = {
     # ======================
-    # USUARIOS / ROLES
+    # USUARIOS
     # ======================
     "usuarios": [
-        "Usuario","PasswordHash","Rol","AbogadoID",
-        "Activo","Creado","NombreCompleto","DNI"
+        "Usuario",
+        "PasswordHash",
+        "Rol",
+        "AbogadoID",
+        "Activo",
+        "Creado",
+        "NombreCompleto",
+        "DNI"
+    ],
+
+    # ======================
+    # PERMISOS POR ROL Y USUARIO
+    # ======================
+    # Scope:
+    #   ROLE  -> aplica a un rol completo
+    #   USER  -> sobrescribe al rol para un usuario específico
+    #
+    # ScopeID:
+    #   ROLE  -> nombre del rol (admin, abogado, etc.)
+    #   USER  -> nombre del usuario
+    #
+    "permisos": [
+        "Scope",            # ROLE / USER
+        "ScopeID",          # Rol o Usuario
+        # ---- Acciones base ----
+        "Ver",
+        "Agregar",
+        "Modificar",
+        "Borrar",
+        # ---- Módulos ----
+        "Casos",
+        "Honorarios",
+        "Pagos",
+        "CuotaLitis",
+        "Consultas",
+        "Actuaciones",
+        "Documentos",
+        "Usuarios",
+        "Colaboradores",
+        "Reportes",
+        # ---- Dashboard (por secciones) ----
+        "Dashboard",
+        "Dash_Indicadores",
+        "Dash_Finanzas",
+        "Dash_Pendientes",
+        "Dash_Agenda",
+        "Dash_Reportes"
     ],
 
     # ======================
@@ -226,7 +274,10 @@ SCHEMAS = {
         "ID","Expediente","Cliente","Abogado",
         "Materia","EstadoCaso","Instancia",
         "Contraparte","DistritoJudicial",
-        "AbogadosExtra","Delegados","Observaciones"
+        "AbogadosExtra","Delegados","Observaciones",
+        # ✅ nuevos (no obligatorios)
+        "Año","Pretension","Juzgado","ContraparteDoc",
+        "DefensaConjunta","DelegacionActiva"
     ],
 
     # ======================
@@ -241,7 +292,9 @@ SCHEMAS = {
     ],
 
     "pagos_honorarios": [
-        "ID","Caso","Etapa","FechaPago","Monto","Observacion"
+        "ID","Caso","Etapa","FechaPago",
+        "Monto","Observacion",
+        "ReciboEntregado"   # ✅ nuevo
     ],
 
     "cuota_litis": [
@@ -249,7 +302,7 @@ SCHEMAS = {
     ],
 
     "pagos_litis": [
-        "ID","Caso","FechaPago","Monto","Observacion"
+        "ID","Caso","FechaPago","Monto","Observacion","ReciboEntregado"
     ],
 
     "cuotas": [
@@ -302,14 +355,7 @@ SCHEMAS = {
     ],
 
     # ======================
-    # PERMISOS
-    # ======================
-    "permisos": [
-        "Rol","Ver","Agregar","Modificar","Borrar"
-    ],
-
-    # ======================
-    # ✅ NUEVO: COLABORADORES
+    # COLABORADORES
     # ======================
     "colaboradores": [
         "ID",
@@ -321,54 +367,6 @@ SCHEMAS = {
         "Observaciones"
     ],
 }
-# ============================
-# CONSTANTES
-# ============================
-ETAPAS_HONORARIOS = ["Primera instancia", "Segunda instancia", "Casación", "Otros"]
-TIPOS_CUOTA = ["Honorarios", "CuotaLitis"]
-
-# ==========================================================
-# UTILIDADES
-# ==========================================================
-def sha256(text: str) -> str:
-    base = (PASSWORD_PEPPER or "") + str(text)
-    return hashlib.sha256(base.encode("utf-8")).hexdigest()
-
-def normalize_key(x) -> str:
-    if pd.isna(x):
-        return ""
-    return str(x).strip()
-
-def drop_unnamed(df: pd.DataFrame) -> pd.DataFrame:
-    return df.loc[:, ~df.columns.str.contains(r"^Unnamed", case=False, na=False)]
-
-def safe_float_series(s):
-    return pd.to_numeric(s, errors="coerce").fillna(0.0)
-
-def money(x):
-    try:
-        return float(x)
-    except Exception:
-        return 0.0
-
-def to_date_safe(x):
-    if pd.isna(x) or str(x).strip()=="":
-        return None
-    try:
-        return pd.to_datetime(x).date()
-    except Exception:
-        return None
-
-def backup_file(path: str):
-    if not os.path.exists(path):
-        return
-    base = os.path.basename(path)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dst = os.path.join(BACKUP_DIR, f"{base}.{stamp}.bak")
-    try:
-        shutil.copy2(path, dst)
-    except Exception:
-        pass
 
 # ==========================================================
 # ensure_csv (FASE 0: NO destruye datos; guarda corrupto antes)
