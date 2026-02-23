@@ -371,7 +371,9 @@ def backup_file(path: str):
         pass
 
 # ==========================================================
-# ensure_csv (NO destruye datos; guarda corrupto antes)
+# ensure_csv (FASE 0: NO destruye datos; guarda corrupto antes)
+# - NO recorta columnas
+# - SOLO agrega columnas faltantes del schema
 # ==========================================================
 def ensure_csv(key: str):
     path = FILES[key]
@@ -391,6 +393,7 @@ def ensure_csv(key: str):
     try:
         df = pd.read_csv(path)
     except pd.errors.EmptyDataError:
+        # archivo corrupto o vacío: respaldar y regenerar
         try:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             shutil.copy2(path, os.path.join(BACKUP_DIR, f"{os.path.basename(path)}.{stamp}.corrupt.bak"))
@@ -401,11 +404,13 @@ def ensure_csv(key: str):
 
     df = drop_unnamed(df)
 
+    # ✅ Agregar columnas faltantes (NO borrar ninguna existente)
     for c in cols:
         if c not in df.columns:
             df[c] = ""
 
-    df = df.reindex(columns=cols)
+    # ❌ NO usar reindex(columns=cols) porque recorta columnas
+    # ✅ Preservar TODAS las columnas existentes y solo asegurar las del schema
     df.to_csv(path, index=False)
 
 # ==========================================================
