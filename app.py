@@ -457,11 +457,34 @@ def load_df(key: str) -> pd.DataFrame:
     df = df.reindex(columns=SCHEMAS[key])
     return df
 
+# ==========================================================
+# save_df (FASE 0: GUARDADO SEGURO)
+# - Hace backup antes de guardar
+# - NO recorta columnas
+# - SOLO asegura columnas del schema
+# ==========================================================
 def save_df(key: str, df: pd.DataFrame):
-    backup_file(FILES[key])
+    path = FILES[key]
+
+    # ✅ Backup antes de guardar
+    try:
+        backup_file(path)
+    except Exception:
+        pass
+
     df = drop_unnamed(df)
-    df = df.reindex(columns=SCHEMAS[key])
-    df.to_csv(FILES[key], index=False)
+
+    # ✅ Asegurar columnas del schema (sin borrar otras)
+    cols = SCHEMAS.get(key, [])
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+
+    # ❌ NO usar reindex(columns=SCHEMAS[key])
+    # ❌ NO eliminar columnas desconocidas
+    # ✅ Preservar todo el contenido existente
+
+    df.to_csv(path, index=False)
 
 def next_id(df: pd.DataFrame, col="ID") -> int:
     if df.empty:
