@@ -243,16 +243,33 @@ def normalize_key(x) -> str:
     return str(x).strip().upper()
 
 def drop_unnamed(df: pd.DataFrame) -> pd.DataFrame:
-    return df.loc[:, ~df.columns.str.contains(r"^Unnamed", case=False, na=False)]
+    """
+    Elimina columnas tipo 'Unnamed: 0' sin romper si df.columns no es string.
+    Protege contra CSV vacíos / columnas no-string.
+    """
+    if df is None:
+        return df
+    if getattr(df, "empty", False):
+        return df
+    try:
+        cols_str = df.columns.astype(str)
+        mask = ~pd.Series(cols_str).str.contains(r"^Unnamed", case=False, na=False)
+        return df.loc[:, mask.values]
+    except Exception:
+        # fallback ultra seguro: no rompe la app
+        return df
+
 
 def safe_float_series(s):
     return pd.to_numeric(s, errors="coerce").fillna(0.0)
+
 
 def money(x):
     try:
         return float(x)
     except Exception:
         return 0.0
+
 
 def to_date_safe(x):
     if pd.isna(x) or str(x).strip() == "":
@@ -261,6 +278,7 @@ def to_date_safe(x):
         return pd.to_datetime(x).date()
     except Exception:
         return None
+
 
 def backup_file(path: str):
     if not os.path.exists(path):
