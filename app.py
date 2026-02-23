@@ -317,15 +317,20 @@ def ensure_csv(key: str):
     df.to_csv(path, index=False)
 
 def load_df(key: str) -> pd.DataFrame:
+    # Asegura que el CSV exista y tenga columnas mínimas
     ensure_csv(key)
+
     try:
         df = pd.read_csv(FILES[key])
     except pd.errors.EmptyDataError:
-        df = pd.DataFrame(columns=SCHEMAS.get(key, []))
+        df = pd.DataFrame()
 
+    # Limpieza segura (NO rompe con columnas no-string)
     df = drop_unnamed(df)
 
-    # Migraciones suaves puntuales
+    # ==========================
+    # MIGRACIONES SUAVES
+    # ==========================
     if key == "actuaciones":
         rename_map = {
             "ActuaciónID": "ID",
@@ -336,7 +341,10 @@ def load_df(key: str) -> pd.DataFrame:
             "Link": "LinkOneDrive",
             "Enlace": "LinkOneDrive",
         }
-        df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
+        df.rename(
+            columns={k: v for k, v in rename_map.items() if k in df.columns},
+            inplace=True
+        )
 
     if key == "pagos_honorarios":
         if "Etapa" not in df.columns:
@@ -352,7 +360,9 @@ def load_df(key: str) -> pd.DataFrame:
         if "Instancia" not in df.columns:
             df["Instancia"] = ""
 
-    # ✅ asegurar columnas del schema sin recortar
+    # ==========================
+    # ASEGURAR SCHEMA (SIN RECORTAR)
+    # ==========================
     for c in SCHEMAS.get(key, []):
         if c not in df.columns:
             df[c] = ""
