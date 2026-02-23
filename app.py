@@ -292,40 +292,93 @@ def backup_file(path: str):
         pass
 
 # ==========================================================
-# FASE 0 — IO SEGURO (NO DESTRUCTIVO)
+# FASE 0 — IO SEGURO (NO DESTRUCTIVO + ANTI CSV CORRUPTO)
+# - ensure_csv: crea/asegura CSV, respalda y rescata si hay ParserError
+# - load_df: NO recorta columnas, migraciones suaves, asegura schema sin destruir
+# - save_df: backup + NO recorta columnas
 # ==========================================================
+
 def ensure_csv(key: str):
     path = FILES[key]
     cols = SCHEMAS.get(key, ["ID"])
 
+    # Crear si no existe
     if not os.path.exists(path):
         pd.DataFrame(columns=cols).to_csv(path, index=False)
         return
 
+    # Si está vacío, recrear con schema
+    try:
+        if os.path.getsize(path) == 0:
+            pd.DataFrame(columns=cols).to_csv(path, index=False)
+            return
+    except OSError:
+        pass
+
+    # Intentar lectura normal
     try:
         df = pd.read_csv(path)
     except pd.errors.EmptyDataError:
-        df = pd.DataFrame()
+        # archivo vacío lógico
+        try:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            shutil.copy2(path, os.path.join(BACKUP_DIR, f"{os.path.basename(path)}.{stamp}.empty.bak"))
+        except Exception:
+            pass
+        pd.DataFrame(columns=cols).to_csv(path, index=False)
+        return
 
+    except pd.errors.ParserError:
+        # CSV corrupto: respaldar e intentar rescatar
+        try:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            shutil.copy2(path, os.path.join(BACKUP_DIR, f"{os.path.basename(path)}.{stamp}.corrupt.bak"))
+        except Exception:
+            pass
+
+        try:
+            df = pd.read_csv(path, engine="python", on_bad_lines="skip")
+        except Exception:
+            # No se pudo rescatar: recrear vacío (backup ya hecho)
+            pd.DataFrame(columns=cols).to_csv(path, index=False)
+            return
+
+    except Exception:
+        # Cualquier otra falla: respaldar y recrear
+        try:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            shutil.copy2(path, os.path.join(BACKUP_DIR, f"{os.path.basename(path)}.{stamp}.readfail.bak"))
+        except Exception:
+            pass
+        pd.DataFrame(columns=cols).to_csv(path, index=False)
+        return
+
+    # Limpieza segura
     df = drop_unnamed(df)
 
-    # ✅ Agregar columnas del schema si faltan, sin borrar otras
+    # Asegurar columnas del schema (SIN borrar otras)
     for c in cols:
         if c not in df.columns:
             df[c] = ""
 
     df.to_csv(path, index=False)
 
+
 def load_df(key: str) -> pd.DataFrame:
-    # Asegura que el CSV exista y tenga columnas mínimas
+    # Asegura que el CSV exista y sea legible
     ensure_csv(key)
 
     try:
         df = pd.read_csv(FILES[key])
     except pd.errors.EmptyDataError:
         df = pd.DataFrame()
+    except pd.errors.ParserError:
+        # si aparece aquí, rescate rápido también
+        try:
+            df = pd.read_csv(FILES[key], engine="python", on_bad_lines="skip")
+        except Exception:
+            df = pd.DataFrame()
 
-    # Limpieza segura (NO rompe con columnas no-string)
     df = drop_unnamed(df)
 
     # ==========================
@@ -341,10 +394,7 @@ def load_df(key: str) -> pd.DataFrame:
             "Link": "LinkOneDrive",
             "Enlace": "LinkOneDrive",
         }
-        df.rename(
-            columns={k: v for k, v in rename_map.items() if k in df.columns},
-            inplace=True
-        )
+        df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
 
     if key == "pagos_honorarios":
         if "Etapa" not in df.columns:
@@ -369,6 +419,7 @@ def load_df(key: str) -> pd.DataFrame:
 
     return df
 
+
 def save_df(key: str, df: pd.DataFrame):
     path = FILES[key]
     try:
@@ -378,18 +429,20 @@ def save_df(key: str, df: pd.DataFrame):
 
     df = drop_unnamed(df)
 
-    # ✅ asegurar columnas del schema sin recortar
+    # Asegurar columnas del schema sin recortar
     for c in SCHEMAS.get(key, []):
         if c not in df.columns:
             df[c] = ""
 
     df.to_csv(path, index=False)
 
+
 def next_id(df: pd.DataFrame, col="ID") -> int:
     if df is None or df.empty:
         return 1
     m = pd.to_numeric(df.get(col, pd.Series(dtype="float")), errors="coerce").max()
     return int(m) + 1 if pd.notna(m) else len(df) + 1
+
 
 def ensure_ids(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
@@ -403,16 +456,18 @@ def ensure_ids(df: pd.DataFrame) -> pd.DataFrame:
         df.at[idx, "ID"] = max_id
     return df
 
+
 def add_row(df: pd.DataFrame, row_dict: dict, schema_key: str) -> pd.DataFrame:
     df2 = pd.concat([df, pd.DataFrame([row_dict])], ignore_index=True)
 
-    # ✅ Asegurar columnas del schema sin recortar otras
+    # Asegurar columnas del schema sin recortar otras
     for c in SCHEMAS.get(schema_key, []):
         if c not in df2.columns:
             df2[c] = ""
 
     return df2
-    
+
+
 def brand_header():
     st.markdown(
         f"""
@@ -425,11 +480,11 @@ def brand_header():
     )
     st.caption(f"Versión: {APP_VERSION}")
 
+
 def require_admin():
-    if str(st.session_state.get("rol","")).strip().lower() != "admin":
+    if str(st.session_state.get("rol", "")).strip().lower() != "admin":
         st.error("❌ Solo ADMIN puede acceder aquí.")
         st.stop()
-
 # ==========================================================
 # BLOQUE A — VISIBILIDAD POR ROL (CASOS)
 # ==========================================================
