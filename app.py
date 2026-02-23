@@ -5512,3 +5512,4 @@ if 'menu' in globals() and menu == 'Repositorio Contratos':
                         )
             else:
                 st.warning('Archivo no encontrado en generados/.')
+
