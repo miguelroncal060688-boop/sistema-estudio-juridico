@@ -733,74 +733,75 @@ with st.sidebar.expander("🔒 Panel de control", expanded=False):
     else:
         st.info("Panel protegido. (Pide la clave)")
 # ==========================================================
-# MENÚ MARCA 004 (FILTRADO POR ROL – SIN REDUCIR)
+# MENÚ FASE 1 (DINÁMICO POR PERMISOS – ROL / USUARIO)
 # ==========================================================
-rol = str(st.session_state.get("rol","")).strip().lower()
+rol = str(st.session_state.get("rol","")).strip()
+usuario = str(st.session_state.get("usuario","")).strip()
 
-menu_items = [
-    "Dashboard",
-    "Ficha del Caso",
-    "Clientes",
-    "Abogados",
-    "Casos",
-    "Honorarios",
-    "Pagos Honorarios",
-    "Cuota Litis",
-    "Pagos Cuota Litis",
-    "Cronograma de Cuotas",
-    "Actuaciones",
-    "Consultas",
-    "Documentos",
-    "Plantillas de Contrato",
-    "Generar Contrato",
-    "Repositorio Contratos",
-    "Instancias",
-    "Usuarios",
-    "Reportes",
-    "Auditoría",
+# ----------------------------------------------------------
+# Helper de permisos (prioridad USER > ROLE)
+# ----------------------------------------------------------
+def can_menu(menu_key: str) -> bool:
+    """
+    menu_key debe coincidir con columnas de SCHEMAS['permisos']
+    Ej: 'Casos', 'Honorarios', 'Usuarios', 'Dashboard', etc.
+    """
+    try:
+        # override por usuario
+        r_user = None
+        dfp = load_df("permisos")
+        if dfp is not None and not dfp.empty:
+            ru = dfp[(dfp["Scope"]=="USER") & (dfp["ScopeID"]==usuario)]
+            if not ru.empty and menu_key in ru.columns:
+                return str(ru.iloc[0].get(menu_key,"0")) == "1"
+
+            # permiso por rol
+            rr = dfp[(dfp["Scope"]=="ROLE") & (dfp["ScopeID"]==rol)]
+            if not rr.empty and menu_key in rr.columns:
+                return str(rr.iloc[0].get(menu_key,"0")) == "1"
+    except Exception:
+        pass
+    return False
+
+
+# ----------------------------------------------------------
+# DEFINICIÓN GLOBAL DE MENÚS (NO SE REDUCE)
+# ----------------------------------------------------------
+MENU_DEF = [
+    ("Dashboard", "Dashboard"),
+    ("Ficha del Caso", "Casos"),
+    ("Clientes", "Casos"),
+    ("Abogados", "Abogados"),
+    ("Casos", "Casos"),
+    ("Honorarios", "Honorarios"),
+    ("Pagos Honorarios", "Pagos"),
+    ("Cuota Litis", "CuotaLitis"),
+    ("Pagos Cuota Litis", "CuotaLitis"),
+    ("Cronograma de Cuotas", "CuotaLitis"),
+    ("Actuaciones", "Actuaciones"),
+    ("Consultas", "Consultas"),
+    ("Documentos", "Documentos"),
+    ("Plantillas de Contrato", "Documentos"),
+    ("Generar Contrato", "Documentos"),
+    ("Repositorio Contratos", "Contratos"),
+    ("Instancias", "Instancias"),
+    ("Usuarios", "Usuarios"),
+    ("Colaboradores", "Colaboradores"),
+    ("Reportes", "Reportes"),
+    ("Auditoría", "Reportes"),
 ]
 
-# ✅ Colaboradores SOLO para ADMIN
-if rol == "admin":
-    menu_items.insert(menu_items.index("Usuarios") + 1, "Colaboradores")
+# ----------------------------------------------------------
+# CONSTRUCCIÓN DINÁMICA DEL MENÚ
+# ----------------------------------------------------------
+menu_items = []
+for label, perm_key in MENU_DEF:
+    if can_menu(perm_key):
+        menu_items.append(label)
 
-# -------- FILTRO POR ROL --------
-if rol == "abogado":
-    menu_items = [
-        m for m in menu_items
-        if m not in [
-            "Honorarios",
-            "Pagos Honorarios",
-            "Cuota Litis",
-            "Pagos Cuota Litis",
-            "Cronograma de Cuotas",
-            "Usuarios",
-            "Auditoría",
-            "Colaboradores",
-        ]
-    ]
-
-elif rol in ["secretaria", "secretaria/o", "asistente"]:
-    menu_items = [
-        m for m in menu_items
-        if m not in [
-            "Honorarios",
-            "Pagos Honorarios",
-            "Cuota Litis",
-            "Pagos Cuota Litis",
-            "Cronograma de Cuotas",
-            "Usuarios",
-            "Auditoría",
-            "Abogados",
-            "Colaboradores",
-        ]
-    ]
-
-elif rol == "solo lectura":
-    menu_items = [
-        m for m in menu_items
-        if m in ["Casos", "Documentos"]
-    ]
+# fallback de seguridad (evita menú vacío)
+if not menu_items:
+    menu_items = ["Dashboard"]
 
 menu = st.sidebar.radio("📌 Menú", menu_items)
 # ==========================================================
