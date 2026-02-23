@@ -3769,91 +3769,99 @@ if menu == "Usuarios":
                 df[c] = "0" if c not in ["Scope", "ScopeID"] else ""
         return df
 
-    def _migrate_old_perms_if_needed():
-        nonlocal permisos
-        if permisos is None:
-            permisos = pd.DataFrame(columns=_perm_cols())
-
-        # Si ya está en nuevo esquema, solo asegurar columnas
-        if "Scope" in permisos.columns and "ScopeID" in permisos.columns:
-            permisos = _ensure_perm_columns(permisos)
-            save_df("permisos", permisos)
-            return
-
-        # Si está viejo (Rol,Ver,Agregar,Modificar,Borrar)
-        if "Rol" in permisos.columns:
-            df_old = permisos.copy()
-            rows_new = []
-
-            # defaults por módulo/dashboard (puedes ajustar desde UI)
-            def default_role_pack(rol: str):
-                r = _norm_role(rol)
-                base = {c: "0" for c in _perm_cols() if c not in ["Scope", "ScopeID"]}
-
-                # Acciones base según tu DEFAULT_PERMISOS anterior
-                # Admin/Abogado: todo, Administrativo: sin borrar, Secretaria: ver+agregar, Solo lectura: ver
-                if r in ["admin", "administrador"]:
-                    base.update({k: "1" for k in base.keys()})
-                elif r == "abogado":
-                    # CRUD base
-                    base["Ver"] = "1"; base["Agregar"] = "1"; base["Modificar"] = "1"; base["Borrar"] = "1"
-                    # módulos típicos para abogado
-                    for m in ["Casos","Actuaciones","Documentos","Consultas","Instancias","Reportes","Dashboard","Dash_Indicadores","Dash_Agenda","Dash_Reportes","Dash_Pendientes"]:
-                        if m in base: base[m] = "1"
-                    # finanzas por defecto OFF para abogado (puedes encenderlo)
-                    if "Dash_Finanzas" in base: base["Dash_Finanzas"] = "0"
-                    for m in ["Honorarios","Pagos","CuotaLitis"]:
-                        if m in base: base[m] = "0"
-                elif r in ["personal administrativo", "administrativo"]:
-                    base["Ver"] = "1"; base["Agregar"] = "1"; base["Modificar"] = "1"; base["Borrar"] = "0"
-                    for m in ["Casos","Honorarios","Pagos","CuotaLitis","Consultas","Actuaciones","Documentos","Reportes","Dashboard","Dash_Indicadores","Dash_Finanzas","Dash_Pendientes","Dash_Agenda","Dash_Reportes"]:
-                        if m in base: base[m] = "1"
-                    if "Usuarios" in base: base["Usuarios"] = "0"
-                    if "Colaboradores" in base: base["Colaboradores"] = "0"
-                elif r in ["secretaria", "secretaria/o", "asistente"]:
-                    base["Ver"] = "1"; base["Agregar"] = "1"; base["Modificar"] = "0"; base["Borrar"] = "0"
-                    for m in ["Casos","Actuaciones","Documentos","Consultas","Dashboard","Dash_Indicadores","Dash_Agenda"]:
-                        if m in base: base[m] = "1"
-                else:  # solo lectura
-                    base["Ver"] = "1"; base["Agregar"] = "0"; base["Modificar"] = "0"; base["Borrar"] = "0"
-                    for m in ["Casos","Documentos","Dashboard","Dash_Indicadores","Dash_Agenda"]:
-                        if m in base: base[m] = "1"
-
-                return base
-
-            # migrar roles existentes en df_old
-            for _, r in df_old.iterrows():
-                rol = str(r.get("Rol","")).strip()
-                if not rol:
-                    continue
-                pack = default_role_pack(rol)
-
-                # respetar CRUD base anterior si existe
-                for old_col in ["Ver","Agregar","Modificar","Borrar"]:
-                    if old_col in df_old.columns:
-                        try:
-                            pack[old_col] = "1" if int(r.get(old_col, 0)) == 1 else "0"
-                        except Exception:
-                            pass
-
-                rows_new.append({
-                    "Scope": "ROLE",
-                    "ScopeID": rol,
-                    **pack
-                })
-
-            permisos = pd.DataFrame(rows_new) if rows_new else pd.DataFrame(columns=_perm_cols())
-            permisos = _ensure_perm_columns(permisos)
-            save_df("permisos", permisos)
-            return
-
-        # si está vacío sin columnas útiles
+def _migrate_old_perms_if_needed(permisos: pd.DataFrame) -> pd.DataFrame:
+    # Asegurar df base
+    if permisos is None or permisos.empty:
         permisos = pd.DataFrame(columns=_perm_cols())
+
+    # Si ya está en nuevo esquema, solo asegurar columnas
+    if "Scope" in permisos.columns and "ScopeID" in permisos.columns:
         permisos = _ensure_perm_columns(permisos)
         save_df("permisos", permisos)
+        return permisos
 
-    _migrate_old_perms_if_needed()
+    # Si está viejo (Rol,Ver,Agregar,Modificar,Borrar)
+    if "Rol" in permisos.columns:
+        df_old = permisos.copy()
+        rows_new = []
 
+        # defaults por módulo/dashboard (puedes ajustar desde UI)
+        def default_role_pack(rol: str):
+            r = _norm_role(rol)
+            base = {c: "0" for c in _perm_cols() if c not in ["Scope", "ScopeID"]}
+
+            # Acciones base según tu DEFAULT_PERMISOS anterior
+            # Admin/Abogado: todo, Administrativo: sin borrar, Secretaria: ver+agregar, Solo lectura: ver
+            if r in ["admin", "administrador"]:
+                base.update({k: "1" for k in base.keys()})
+
+            elif r == "abogado":
+                # CRUD base
+                base["Ver"] = "1"; base["Agregar"] = "1"; base["Modificar"] = "1"; base["Borrar"] = "1"
+                # módulos típicos para abogado
+                for m in ["Casos","Actuaciones","Documentos","Consultas","Instancias","Reportes",
+                          "Dashboard","Dash_Indicadores","Dash_Agenda","Dash_Reportes","Dash_Pendientes"]:
+                    if m in base: base[m] = "1"
+                # finanzas por defecto OFF para abogado (puedes encenderlo)
+                if "Dash_Finanzas" in base: base["Dash_Finanzas"] = "0"
+                for m in ["Honorarios","Pagos","CuotaLitis"]:
+                    if m in base: base[m] = "0"
+
+            elif r in ["personal administrativo", "administrativo"]:
+                base["Ver"] = "1"; base["Agregar"] = "1"; base["Modificar"] = "1"; base["Borrar"] = "0"
+                for m in ["Casos","Honorarios","Pagos","CuotaLitis","Consultas","Actuaciones","Documentos","Reportes",
+                          "Dashboard","Dash_Indicadores","Dash_Finanzas","Dash_Pendientes","Dash_Agenda","Dash_Reportes"]:
+                    if m in base: base[m] = "1"
+                if "Usuarios" in base: base["Usuarios"] = "0"
+                if "Colaboradores" in base: base["Colaboradores"] = "0"
+
+            elif r in ["secretaria", "secretaria/o", "asistente"]:
+                base["Ver"] = "1"; base["Agregar"] = "1"; base["Modificar"] = "0"; base["Borrar"] = "0"
+                for m in ["Casos","Actuaciones","Documentos","Consultas","Dashboard","Dash_Indicadores","Dash_Agenda"]:
+                    if m in base: base[m] = "1"
+
+            else:  # solo lectura
+                base["Ver"] = "1"; base["Agregar"] = "0"; base["Modificar"] = "0"; base["Borrar"] = "0"
+                for m in ["Casos","Documentos","Dashboard","Dash_Indicadores","Dash_Agenda"]:
+                    if m in base: base[m] = "1"
+
+            return base
+
+        # migrar roles existentes en df_old
+        for _, r in df_old.iterrows():
+            rol = str(r.get("Rol","")).strip()
+            if not rol:
+                continue
+            pack = default_role_pack(rol)
+
+            # respetar CRUD base anterior si existe
+            for old_col in ["Ver","Agregar","Modificar","Borrar"]:
+                if old_col in df_old.columns:
+                    try:
+                        pack[old_col] = "1" if int(r.get(old_col, 0)) == 1 else "0"
+                    except Exception:
+                        pass
+
+            rows_new.append({
+                "Scope": "ROLE",
+                "ScopeID": rol,
+                **pack
+            })
+
+        permisos_new = pd.DataFrame(rows_new) if rows_new else pd.DataFrame(columns=_perm_cols())
+        permisos_new = _ensure_perm_columns(permisos_new)
+        save_df("permisos", permisos_new)
+        return permisos_new
+
+    # si está vacío sin columnas útiles
+    permisos = pd.DataFrame(columns=_perm_cols())
+    permisos = _ensure_perm_columns(permisos)
+    save_df("permisos", permisos)
+    return permisos
+
+
+# ✅ IMPORTANTÍSIMO: asignar el retorno (sin nonlocal)
+permisos = _migrate_old_perms_if_needed(permisos)
     # --------------------------------------------------
     # Helpers permisos (prioridad USER > ROLE)
     # --------------------------------------------------
