@@ -1,5 +1,3 @@
-
-
 import streamlit as st
 import pandas as pd
 import os
@@ -8,147 +6,14 @@ import shutil
 from datetime import date, datetime
 
 # ==========================================================
-# FUNCIONES BASE
-# ==========================================================
-def cargar_csv(nombre):
-    if os.path.exists(nombre):
-        return pd.read_csv(nombre)
-    return pd.DataFrame()
-
-def guardar_csv(df, nombre):
-    df.to_csv(nombre, index=False)
-
-
-# ==========================================================
-# ALIAS DE FUNCIONES (COMPATIBILIDAD)
-# ==========================================================
-def load_df(nombre):
-    return cargar_csv(f"{nombre}.csv")
-
-def save_df(nombre, df):
-    guardar_csv(df, f"{nombre}.csv")
-
-def normalize_key(x):
-    return str(x).strip().upper()
-
-# ==========================================================
-# BLOQUE A — VISIBILIDAD POR ROL (CASOS)
-# ==========================================================
-def _rol_actual():
-    return str(st.session_state.get("rol","")).strip().lower()
-
-def _usuario_actual():
-    return str(
-        st.session_state.get("usuario")
-        or st.session_state.get("Usuario")
-        or st.session_state.get("user")
-        or ""
-    ).strip()
-
-def _nombre_abogado_del_usuario():
-    """
-    Devuelve el NOMBRE del abogado asociado al usuario (si rol=Abogado),
-    usando usuarios.AbogadoID -> abogados.ID -> abogados.Nombre
-    """
-    try:
-        usuario = _usuario_actual()
-        if not usuario:
-            return ""
-
-        df_u = load_df("usuarios")
-        if df_u.empty or "Usuario" not in df_u.columns:
-            return ""
-
-        fila = df_u[df_u["Usuario"].astype(str) == usuario]
-        if fila.empty:
-            return ""
-
-        abogado_id = str(fila.iloc[0].get("AbogadoID","")).strip()
-        if not abogado_id:
-            return ""
-
-        df_a = load_df("abogados")
-        if df_a.empty or "ID" not in df_a.columns:
-            return ""
-
-        match = df_a[df_a["ID"].astype(str) == abogado_id]
-        if match.empty:
-            return ""
-
-        if "Nombre" in match.columns:
-            return str(match.iloc[0]["Nombre"]).strip()
-
-        return ""
-    except Exception:
-        return ""
-
-def filtrar_casos_por_rol(df_casos):
-    """
-    Reglas:
-    - Admin / Personal Administrativo: ve todo
-    - Abogado: ve casos donde:
-        * es Abogado principal
-        * está en AbogadosExtra (defensa conjunta)
-        * está en Delegados
-    - Secretaria/o / Asistente: solo casos Delegados
-    """
-    if df_casos is None or df_casos.empty:
-        return df_casos
-
-    rol = _rol_actual()
-    usuario = _usuario_actual()
-
-    # Roles con vista total
-    if rol in ["admin", "personal administrativo"]:
-        return df_casos
-
-    df = df_casos.copy()
-
-    for col in ["Abogado", "AbogadosExtra", "Delegados"]:
-        if col not in df.columns:
-            df[col] = ""
-        df[col] = df[col].astype(str)
-
-    # Abogado
-    if rol == "abogado":
-        nombre_abogado = _nombre_abogado_del_usuario()
-
-        m_deleg = df["Delegados"].str.contains(usuario, case=False, na=False) if usuario else False
-
-        if nombre_abogado:
-            m1 = df["Abogado"].str.contains(nombre_abogado, case=False, na=False)
-            m2 = df["AbogadosExtra"].str.contains(nombre_abogado, case=False, na=False)
-            return df[m1 | m2 | m_deleg].copy()
-
-        return df[m_deleg].copy() if isinstance(m_deleg, pd.Series) else df.iloc[0:0].copy()
-
-    # Secretaria / Asistente
-    if rol in ["secretaria", "secretaria/o", "asistente"]:
-        if not usuario:
-            return df.iloc[0:0].copy()
-        return df[df["Delegados"].str.contains(usuario, case=False, na=False)].copy()
-
-    # Otros roles: conservador
-    if not usuario:
-        return df.iloc[0:0].copy()
-    return df[df["Delegados"].str.contains(usuario, case=False, na=False)].copy()
-
-# ==========================================================
-# MARCA 004 – VERSIÓN ESTABLE OPERATIVA
-# Estado: FUNCIONA TODO – NO MODIFICAR NI REDUCIR
-# Añadidos: Edit/Borrar Honorarios + Ficha/Historial Actuaciones (con link OneDrive)
-#           + Módulo Consultas (con proforma e historial)
+# MARCA / CONFIGURACIÓN GENERAL
 # ==========================================================
 APP_VERSION = "MARCA 006"  # Integración completa 1-19
-
-# ==========================================================
-# CONFIGURACIÓN GENERAL
-# ==========================================================
 APP_NAME = "Estudio Jurídico Roncal Liñan y Asociados"
+
 CONTROL_PASSWORD = st.secrets.get("CONTROL_PASSWORD", "control123")  # clave panel de control
 ADMIN_BOOTSTRAP_PASSWORD = st.secrets.get("ADMIN_BOOTSTRAP_PASSWORD", "estudio123")
 PASSWORD_PEPPER = st.secrets.get("PASSWORD_PEPPER", "")
-
 
 DATA_DIR = "."
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
@@ -170,7 +35,7 @@ FILES = {
     "abogados": "abogados.csv",
     "casos": "casos.csv",
 
-    # ✅ NUEVO: colaboradores
+    # ✅ colaboradores
     "colaboradores": "colaboradores.csv",
 
     "honorarios": "honorarios.csv",
@@ -191,14 +56,12 @@ FILES = {
     "contratos": "contratos.csv",
     "auditoria_mod": "auditoria_mod.csv",
 
-    # ✅ ROLES Y PERMISOS
+    # ✅ roles/permisos
     "permisos": "permisos.csv",
 }
+
 # ==========================================================
 # SCHEMAS (FASE 1 — Seguridad y Control)
-# - NO destructivo (compatible con Fase 0)
-# - Permite permisos por ROL y por USUARIO
-# - Permite control fino del Dashboard
 # ==========================================================
 SCHEMAS = {
     # ======================
@@ -218,26 +81,15 @@ SCHEMAS = {
     # ======================
     # PERMISOS (ROL / USUARIO)
     # ======================
-    # Scope:
-    #   ROLE -> aplica a un rol completo
-    #   USER -> sobrescribe al rol para un usuario específico
-    #
-    # ScopeID:
-    #   ROLE -> nombre del rol (admin, abogado, secretaria, etc.)
-    #   USER -> nombre del usuario
-    #
     "permisos": [
-        # Identidad del permiso
         "Scope",            # ROLE / USER
         "ScopeID",          # Rol o Usuario
 
-        # ---- Acciones base (CRUD) ----
         "Ver",
         "Agregar",
         "Modificar",
         "Borrar",
 
-        # ---- Módulos ----
         "Casos",
         "Honorarios",
         "Pagos",
@@ -251,7 +103,6 @@ SCHEMAS = {
         "Contratos",
         "Reportes",
 
-        # ---- Dashboard (global y por secciones) ----
         "Dashboard",
         "Dash_Indicadores",
         "Dash_Finanzas",
@@ -274,7 +125,7 @@ SCHEMAS = {
     ],
 
     # ======================
-    # CASOS
+    # CASOS (ampliado para evitar pérdidas)
     # ======================
     "casos": [
         "ID","Expediente","Cliente","Abogado",
@@ -282,7 +133,6 @@ SCHEMAS = {
         "Contraparte","DistritoJudicial",
         "AbogadosExtra","Delegados","Observaciones",
 
-        # ---- Campos ampliados (no obligatorios) ----
         "Año",
         "Pretension",
         "Juzgado",
@@ -305,7 +155,7 @@ SCHEMAS = {
     "pagos_honorarios": [
         "ID","Caso","Etapa","FechaPago",
         "Monto","Observacion",
-        "ReciboEntregado"   # ✅ nuevo
+        "ReciboEntregado"
     ],
 
     "cuota_litis": [
@@ -339,7 +189,7 @@ SCHEMAS = {
     ],
 
     # ======================
-    # OTROS MÓDULOS
+    # OTROS
     # ======================
     "consultas": [
         "ID","Fecha","Cliente","Caso","Abogado","Consulta","Estrategia",
@@ -370,19 +220,61 @@ SCHEMAS = {
     # COLABORADORES
     # ======================
     "colaboradores": [
-        "ID",
-        "Nombre",
-        "DNI",
-        "Tipo",
-        "Usuario",
-        "Activo",
-        "Observaciones"
+        "ID","Nombre","DNI","Tipo","Usuario","Activo","Observaciones"
     ],
 }
+
+# ============================
+# CONSTANTES
+# ============================
+ETAPAS_HONORARIOS = ["Primera instancia", "Segunda instancia", "Casación", "Otros"]
+TIPOS_CUOTA = ["Honorarios", "CuotaLitis"]
+
 # ==========================================================
-# ensure_csv (FASE 0: NO destruye datos; guarda corrupto antes)
-# - NO recorta columnas
-# - SOLO agrega columnas faltantes del schema
+# UTILIDADES (DEBEN IR ANTES DE ensure_csv/load_df/save_df)
+# ==========================================================
+def sha256(text: str) -> str:
+    base = (PASSWORD_PEPPER or "") + str(text)
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+def normalize_key(x) -> str:
+    if pd.isna(x):
+        return ""
+    return str(x).strip().upper()
+
+def drop_unnamed(df: pd.DataFrame) -> pd.DataFrame:
+    return df.loc[:, ~df.columns.str.contains(r"^Unnamed", case=False, na=False)]
+
+def safe_float_series(s):
+    return pd.to_numeric(s, errors="coerce").fillna(0.0)
+
+def money(x):
+    try:
+        return float(x)
+    except Exception:
+        return 0.0
+
+def to_date_safe(x):
+    if pd.isna(x) or str(x).strip() == "":
+        return None
+    try:
+        return pd.to_datetime(x).date()
+    except Exception:
+        return None
+
+def backup_file(path: str):
+    if not os.path.exists(path):
+        return
+    base = os.path.basename(path)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    dst = os.path.join(BACKUP_DIR, f"{base}.{stamp}.bak")
+    try:
+        shutil.copy2(path, dst)
+    except Exception:
+        pass
+
+# ==========================================================
+# FASE 0 — IO SEGURO (NO DESTRUCTIVO)
 # ==========================================================
 def ensure_csv(key: str):
     path = FILES[key]
@@ -393,48 +285,29 @@ def ensure_csv(key: str):
         return
 
     try:
-        if os.path.getsize(path) == 0:
-            pd.DataFrame(columns=cols).to_csv(path, index=False)
-            return
-    except OSError:
-        pass
-
-    try:
         df = pd.read_csv(path)
     except pd.errors.EmptyDataError:
-        # archivo corrupto o vacío: respaldar y regenerar
-        try:
-            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            shutil.copy2(path, os.path.join(BACKUP_DIR, f"{os.path.basename(path)}.{stamp}.corrupt.bak"))
-        except Exception:
-            pass
-        pd.DataFrame(columns=cols).to_csv(path, index=False)
-        return
+        df = pd.DataFrame()
 
     df = drop_unnamed(df)
 
-    # ✅ Agregar columnas faltantes (NO borrar ninguna existente)
+    # ✅ Agregar columnas del schema si faltan, sin borrar otras
     for c in cols:
         if c not in df.columns:
             df[c] = ""
 
-    # ❌ NO usar reindex(columns=cols) porque recorta columnas
-    # ✅ Preservar TODAS las columnas existentes y solo asegurar las del schema
     df.to_csv(path, index=False)
 
-# ==========================================================
-# load_df (migraciones suaves)
-# ==========================================================
 def load_df(key: str) -> pd.DataFrame:
     ensure_csv(key)
     try:
         df = pd.read_csv(FILES[key])
     except pd.errors.EmptyDataError:
-        df = pd.DataFrame(columns=SCHEMAS[key])
+        df = pd.DataFrame(columns=SCHEMAS.get(key, []))
 
     df = drop_unnamed(df)
 
-    # Migración actuaciones si venían con nombres antiguos
+    # Migraciones suaves puntuales
     if key == "actuaciones":
         rename_map = {
             "ActuaciónID": "ID",
@@ -447,35 +320,29 @@ def load_df(key: str) -> pd.DataFrame:
         }
         df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
 
-    # Migración pagos_honorarios si era esquema antiguo sin Etapa
     if key == "pagos_honorarios":
         if "Etapa" not in df.columns:
             df["Etapa"] = ""
+        if "ReciboEntregado" not in df.columns:
+            df["ReciboEntregado"] = ""
 
-    # Migración casos: si no existía Instancia
+    if key == "pagos_litis":
+        if "ReciboEntregado" not in df.columns:
+            df["ReciboEntregado"] = ""
+
     if key == "casos":
         if "Instancia" not in df.columns:
             df["Instancia"] = ""
 
-    # Migración consultas si existiera algo previo
-    if key == "consultas":
-        for col in SCHEMAS["consultas"]:
-            if col not in df.columns:
-                df[col] = ""
+    # ✅ asegurar columnas del schema sin recortar
+    for c in SCHEMAS.get(key, []):
+        if c not in df.columns:
+            df[c] = ""
 
-    df = df.reindex(columns=SCHEMAS[key])
     return df
 
-# ==========================================================
-# save_df (FASE 0: GUARDADO SEGURO)
-# - Hace backup antes de guardar
-# - NO recorta columnas
-# - SOLO asegura columnas del schema
-# ==========================================================
 def save_df(key: str, df: pd.DataFrame):
     path = FILES[key]
-
-    # ✅ Backup antes de guardar
     try:
         backup_file(path)
     except Exception:
@@ -483,25 +350,22 @@ def save_df(key: str, df: pd.DataFrame):
 
     df = drop_unnamed(df)
 
-    # ✅ Asegurar columnas del schema (sin borrar otras)
-    cols = SCHEMAS.get(key, [])
-    for c in cols:
+    # ✅ asegurar columnas del schema sin recortar
+    for c in SCHEMAS.get(key, []):
         if c not in df.columns:
             df[c] = ""
-
-    # ❌ NO usar reindex(columns=SCHEMAS[key])
-    # ❌ NO eliminar columnas desconocidas
-    # ✅ Preservar todo el contenido existente
 
     df.to_csv(path, index=False)
 
 def next_id(df: pd.DataFrame, col="ID") -> int:
-    if df.empty:
+    if df is None or df.empty:
         return 1
-    m = pd.to_numeric(df[col], errors="coerce").max()
+    m = pd.to_numeric(df.get(col, pd.Series(dtype="float")), errors="coerce").max()
     return int(m) + 1 if pd.notna(m) else len(df) + 1
 
 def ensure_ids(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
     if "ID" not in df.columns:
         return df
     ids = pd.to_numeric(df["ID"], errors="coerce")
@@ -513,7 +377,10 @@ def ensure_ids(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_row(df: pd.DataFrame, row_dict: dict, schema_key: str) -> pd.DataFrame:
     df2 = pd.concat([df, pd.DataFrame([row_dict])], ignore_index=True)
-    df2 = df2.reindex(columns=SCHEMAS[schema_key])
+    # ✅ asegurar columnas del schema sin recortar (FASE 0)
+    for c in SCHEMAS.get(schema_key, []):
+        if c not in df2.columns:
+            df2[c] = ""
     return df2
 
 def brand_header():
@@ -529,12 +396,97 @@ def brand_header():
     st.caption(f"Versión: {APP_VERSION}")
 
 def require_admin():
-    if st.session_state.get("rol") != "admin":
+    if str(st.session_state.get("rol","")).strip().lower() != "admin":
         st.error("❌ Solo ADMIN puede acceder aquí.")
         st.stop()
 
 # ==========================================================
-# INICIALIZACIÓN DE ARCHIVOS
+# BLOQUE A — VISIBILIDAD POR ROL (CASOS)
+# ==========================================================
+def _rol_actual():
+    return str(st.session_state.get("rol","")).strip().lower()
+
+def _usuario_actual():
+    return str(
+        st.session_state.get("usuario")
+        or st.session_state.get("Usuario")
+        or st.session_state.get("user")
+        or ""
+    ).strip()
+
+def _nombre_abogado_del_usuario():
+    """
+    Devuelve el NOMBRE del abogado asociado al usuario (si rol=Abogado),
+    usando usuarios.AbogadoID -> abogados.ID -> abogados.Nombre
+    """
+    try:
+        usuario = _usuario_actual()
+        if not usuario:
+            return ""
+        df_u = load_df("usuarios")
+        if df_u.empty or "Usuario" not in df_u.columns:
+            return ""
+        fila = df_u[df_u["Usuario"].astype(str) == usuario]
+        if fila.empty:
+            return ""
+        abogado_id = str(fila.iloc[0].get("AbogadoID","")).strip()
+        if not abogado_id:
+            return ""
+        df_a = load_df("abogados")
+        if df_a.empty or "ID" not in df_a.columns:
+            return ""
+        match = df_a[df_a["ID"].astype(str) == abogado_id]
+        if match.empty:
+            return ""
+        return str(match.iloc[0].get("Nombre","")).strip()
+    except Exception:
+        return ""
+
+def filtrar_casos_por_rol(df_casos):
+    """
+    Reglas:
+    - Admin / Personal Administrativo: ve todo
+    - Abogado: ve casos donde:
+        * es Abogado principal (por nombre)
+        * está en AbogadosExtra (defensa conjunta por nombre)
+        * está en Delegados (por usuario)
+    - Secretaria/o / Asistente: solo casos Delegados (por usuario)
+    """
+    if df_casos is None or df_casos.empty:
+        return df_casos
+
+    rol = _rol_actual()
+    usuario = _usuario_actual()
+
+    if rol in ["admin", "personal administrativo"]:
+        return df_casos
+
+    df = df_casos.copy()
+    for col in ["Abogado", "AbogadosExtra", "Delegados"]:
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].astype(str)
+
+    if rol == "abogado":
+        nombre_abogado = _nombre_abogado_del_usuario()
+        m_deleg = df["Delegados"].str.contains(usuario, case=False, na=False) if usuario else False
+        if nombre_abogado:
+            m1 = df["Abogado"].str.contains(nombre_abogado, case=False, na=False)
+            m2 = df["AbogadosExtra"].str.contains(nombre_abogado, case=False, na=False)
+            return df[m1 | m2 | m_deleg].copy()
+        return df[m_deleg].copy() if isinstance(m_deleg, pd.Series) else df.iloc[0:0].copy()
+
+    if rol in ["secretaria", "secretaria/o", "asistente"]:
+        if not usuario:
+            return df.iloc[0:0].copy()
+        return df[df["Delegados"].str.contains(usuario, case=False, na=False)].copy()
+
+    if not usuario:
+        return df.iloc[0:0].copy()
+    return df[df["Delegados"].str.contains(usuario, case=False, na=False)].copy()
+
+# ==========================================================
+# INICIALIZACIÓN DE ARCHIVOS (DESPUÉS de utilidades)
 # ==========================================================
 for k in FILES:
     ensure_csv(k)
@@ -551,11 +503,13 @@ if usuarios[usuarios["Usuario"].astype(str) == "admin"].empty:
         "AbogadoID": "",
         "Activo": "1",
         "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "NombreCompleto": "",
+        "DNI": "",
     }, "usuarios")
     save_df("usuarios", usuarios)
 
 # ==========================================================
-# LOGIN
+# LOGIN (variables de sesión)
 # ==========================================================
 if "usuario" not in st.session_state:
     st.session_state.usuario = None
@@ -580,8 +534,8 @@ def login_ui():
             st.stop()
 
         st.session_state.usuario = u
-        st.session_state.rol = row.iloc[0]["Rol"]
-        st.session_state.abogado_id = str(row.iloc[0]["AbogadoID"]) if "AbogadoID" in row.columns else ""
+        st.session_state.rol = str(row.iloc[0].get("Rol",""))
+        st.session_state.abogado_id = str(row.iloc[0].get("AbogadoID","")) if "AbogadoID" in row.columns else ""
         st.rerun()
 
 if st.session_state.usuario is None:
@@ -607,17 +561,15 @@ actuaciones = ensure_ids(load_df("actuaciones"))
 documentos = ensure_ids(load_df("documentos"))
 plantillas = ensure_ids(load_df("plantillas"))
 consultas = ensure_ids(load_df("consultas"))
-usuarios = load_df("usuarios")
 
 # normalizar claves
 if "Expediente" in casos.columns:
     casos["Expediente"] = casos["Expediente"].apply(normalize_key)
 
 for df in [honorarios, honorarios_etapas, pagos_honorarios, cuota_litis, pagos_litis, cuotas, actuaciones, documentos]:
-    if "Caso" in df.columns:
+    if df is not None and not df.empty and "Caso" in df.columns:
         df["Caso"] = df["Caso"].apply(normalize_key)
 
-# normalizar Tipo de cuotas si venía con espacios
 if not cuotas.empty and "Tipo" in cuotas.columns:
     cuotas["Tipo"] = cuotas["Tipo"].astype(str).str.replace(" ", "", regex=False)
     cuotas["Tipo"] = cuotas["Tipo"].replace({"CuotaLitis":"CuotaLitis","Honorarios":"Honorarios"})
@@ -636,207 +588,17 @@ save_df("plantillas", plantillas)
 save_df("consultas", consultas)
 
 # ==========================================================
-# FINANZAS
-# ==========================================================
-def canon_last_by_case(df: pd.DataFrame, case_col="Caso"):
-    if df.empty:
-        return df
-    tmp = df.copy()
-    tmp[case_col] = tmp[case_col].apply(normalize_key)
-    tmp["_id"] = pd.to_numeric(tmp["ID"], errors="coerce").fillna(0).astype(int)
-    tmp.sort_values([case_col, "_id"], inplace=True)
-    tmp = tmp.groupby(case_col, as_index=False).tail(1)
-    tmp.drop(columns=["_id"], inplace=True, errors="ignore")
-    return tmp
-
-
-def gastos_actuaciones_por_caso():
-    """
-    Suma gastos de actuaciones por caso (INFORMATIVO).
-    NO se consideran deuda general.
-    """
-    if actuaciones.empty:
-        return pd.DataFrame(columns=["Caso", "GastosActuaciones"])
-
-    df = actuaciones.copy()
-    df["Caso"] = df["Caso"].apply(normalize_key)
-
-    df["CostasAranceles"] = pd.to_numeric(df.get("CostasAranceles", 0), errors="coerce").fillna(0.0)
-    df["Gastos"] = pd.to_numeric(df.get("Gastos", 0), errors="coerce").fillna(0.0)
-    df["GastosActuaciones"] = df["CostasAranceles"] + df["Gastos"]
-
-    out = df.groupby("Caso", as_index=False)["GastosActuaciones"].sum()
-    return out
-
-
-def resumen_financiero_df():
-    """
-    Resumen por caso (Expediente):
-
-    ✅ El Saldo Total incluye SOLO:
-       - Honorarios pendientes
-       - Cuota litis pendiente
-
-    ✅ Los gastos de actuaciones:
-       - Se muestran como INFORMATIVOS
-       - NO inflan deuda ni saldo total
-    """
-    if casos.empty:
-        return pd.DataFrame(columns=[
-            "Expediente","Cliente","Materia",
-            "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
-            "Cuota Litis Calculada","Pagado Litis","Saldo Litis",
-            "Gastos Actuaciones","Saldo Total"
-        ])
-
-    # Normalizar claves en dataframes financieros
-    for df in [honorarios, honorarios_etapas, pagos_honorarios, cuota_litis, pagos_litis]:
-        if df is not None and not df.empty and "Caso" in df.columns:
-            df["Caso"] = df["Caso"].apply(normalize_key)
-
-    # Preparar cuota litis con cálculo por fila
-    cl = cuota_litis.copy()
-    if not cl.empty:
-        cl["Monto Base"] = safe_float_series(cl.get("Monto Base", 0))
-        cl["Porcentaje"] = safe_float_series(cl.get("Porcentaje", 0))
-        cl["CuotaCalc"] = cl["Monto Base"] * cl["Porcentaje"] / 100.0
-    else:
-        cl = pd.DataFrame(columns=["Caso", "CuotaCalc"])
-
-    # Gastos informativos por actuaciones
-    gastos_df = gastos_actuaciones_por_caso()
-    gastos_map = {}
-    if not gastos_df.empty:
-        gastos_map = dict(
-            zip(
-                gastos_df["Caso"].astype(str),
-                safe_float_series(gastos_df["GastosActuaciones"]).tolist()
-            )
-        )
-
-    rows = []
-    for _, c in casos.iterrows():
-        exp = normalize_key(c.get("Expediente",""))
-
-        # 1) Honorarios pactados
-        etapas_exp = honorarios_etapas[honorarios_etapas["Caso"] == exp].copy()
-        if not etapas_exp.empty:
-            pactado = safe_float_series(etapas_exp.get("Monto Pactado", 0)).sum()
-        else:
-            sub_h = honorarios[honorarios["Caso"] == exp].copy()
-            pactado = safe_float_series(sub_h.get("Monto Pactado", 0)).sum()
-
-        # 2) Pagos honorarios
-        sub_ph = pagos_honorarios[pagos_honorarios["Caso"] == exp].copy()
-        pagado_h = safe_float_series(sub_ph.get("Monto", 0)).sum()
-
-        # 3) Cuota litis calculada
-        sub_cl = cl[cl["Caso"] == exp].copy()
-        calc = safe_float_series(sub_cl.get("CuotaCalc", 0)).sum()
-
-        # 4) Pagos litis
-        sub_pl = pagos_litis[pagos_litis["Caso"] == exp].copy()
-        pagado_l = safe_float_series(sub_pl.get("Monto", 0)).sum()
-
-        # 5) Pendientes reales
-        pend_h = max(0.0, float(pactado) - float(pagado_h))
-        pend_l = max(0.0, float(calc) - float(pagado_l))
-
-        # 6) Gastos actuaciones (INFORMATIVO)
-        gastos_act = float(gastos_map.get(exp, 0.0))
-
-        # ✅ 7) Saldo total (SIN gastos)
-        saldo_total = float(pend_h + pend_l)
-
-        rows.append([
-            exp, c.get("Cliente",""), c.get("Materia",""),
-            float(pactado), float(pagado_h), float(pend_h),
-            float(calc), float(pagado_l), float(pend_l),
-            float(gastos_act), float(saldo_total)
-        ])
-
-    return pd.DataFrame(rows, columns=[
-        "Expediente","Cliente","Materia",
-        "Honorario Pactado","Honorario Pagado","Honorario Pendiente",
-        "Cuota Litis Calculada","Pagado Litis","Saldo Litis",
-        "Gastos Actuaciones","Saldo Total"
-    ])
-
-
-def cuotas_status_all():
-    if cuotas.empty:
-        return pd.DataFrame()
-
-    df = cuotas.copy()
-    df["Caso"] = df["Caso"].apply(normalize_key)
-    df["Monto"] = safe_float_series(df["Monto"])
-    df["FechaVenc_dt"] = df["FechaVenc"].apply(to_date_safe)
-
-    ph = pagos_honorarios.copy()
-    pl = pagos_litis.copy()
-    ph["Caso"] = ph["Caso"].apply(normalize_key)
-    pl["Caso"] = pl["Caso"].apply(normalize_key)
-    ph["Monto"] = safe_float_series(ph["Monto"])
-    pl["Monto"] = safe_float_series(pl["Monto"])
-
-    def calc_for_type(tipo, pagos_df):
-        sub = df[df["Tipo"] == tipo].copy()
-        if sub.empty:
-            return sub
-
-        sub["_sort_date"] = sub["FechaVenc_dt"].apply(lambda d: d if d else date(2100,1,1))
-        sub["NroCuota"] = pd.to_numeric(sub["NroCuota"], errors="coerce").fillna(0).astype(int)
-        sub.sort_values(["Caso","_sort_date","NroCuota"], inplace=True)
-
-        pagado_por_caso = pagos_df.groupby("Caso")["Monto"].sum().to_dict()
-        remaining = {k: float(v) for k, v in pagado_por_caso.items()}
-
-        asignados, saldos, estados, dias = [], [], [], []
-        today = date.today()
-        for _, r in sub.iterrows():
-            caso = r["Caso"]
-            monto = float(r["Monto"])
-            venc = r["FechaVenc_dt"]
-
-            rem = remaining.get(caso, 0.0)
-            asign = min(rem, monto) if monto > 0 else 0.0
-            remaining[caso] = rem - asign
-            saldo = monto - asign
-
-            if monto == 0:
-                est = "Sin monto"
-            elif saldo <= 0.00001:
-                est = "Pagada"
-            elif asign > 0:
-                est = "Parcial"
-            else:
-                est = "Pendiente"
-
-            dv = None if venc is None else (venc - today).days
-            asignados.append(asign); saldos.append(saldo); estados.append(est); dias.append(dv)
-
-        sub["PagadoAsignado"] = asignados
-        sub["SaldoCuota"] = saldos
-        sub["Estado"] = estados
-        sub["DiasParaVencimiento"] = dias
-        sub.drop(columns=["_sort_date"], inplace=True, errors="ignore")
-        return sub
-
-    out_h = calc_for_type("Honorarios", ph)
-    out_l = calc_for_type("CuotaLitis", pl)
-    out = pd.concat([out_h, out_l], ignore_index=True) if (not out_h.empty or not out_l.empty) else pd.DataFrame()
-    return out
-# ==========================================================
-# PANEL DE CONTROL (RESET OCULTO)
+# PANEL DE CONTROL (RESET)
 # ==========================================================
 def reset_suave():
-    casos_set = set(casos["Expediente"].tolist())
+    casos_set = set(casos["Expediente"].tolist()) if (casos is not None and not casos.empty and "Expediente" in casos.columns) else set()
 
     def clean(keyname):
         df = load_df(keyname)
         if "Caso" in df.columns:
             df["Caso"] = df["Caso"].apply(normalize_key)
-            df = df[df["Caso"].isin(casos_set)].copy()
+            if casos_set:
+                df = df[df["Caso"].isin(casos_set)].copy()
         df = ensure_ids(df)
         save_df(keyname, df)
 
@@ -859,7 +621,9 @@ def reset_total(borrar_archivos=False):
         "Rol":"admin",
         "AbogadoID":"",
         "Activo":"1",
-        "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "NombreCompleto":"",
+        "DNI":""
     }])], ignore_index=True)
     users.to_csv(FILES["usuarios"], index=False)
 
@@ -877,31 +641,24 @@ def reset_total(borrar_archivos=False):
 # ==========================================================
 st.sidebar.markdown(f"### 🏷️ {APP_VERSION}")
 
-# -------- IDENTIDAD DE USUARIO (ABOGADO / COLABORADOR) --------
 usr = str(st.session_state.get("usuario","")).strip()
 rol_raw = str(st.session_state.get("rol","")).strip()
 rol = rol_raw.lower()
-
 display_user = usr
 
 try:
-    # ----- ABOGADO -----
     if rol == "abogado":
         u_df = load_df("usuarios")
         a_df = load_df("abogados")
-
         if u_df is not None and not u_df.empty:
             fila_u = u_df[u_df["Usuario"].astype(str) == usr]
             if not fila_u.empty:
                 ab_id = str(fila_u.iloc[0].get("AbogadoID","")).strip()
-
-                # normalizar 1.0 -> 1
                 try:
                     if "." in ab_id:
                         ab_id = str(int(float(ab_id)))
                 except Exception:
                     pass
-
                 if a_df is not None and not a_df.empty and "ID" in a_df.columns:
                     fila_a = a_df[a_df["ID"].astype(str).str.strip() == ab_id]
                     if not fila_a.empty:
@@ -909,7 +666,6 @@ try:
                         if nombre_ab:
                             display_user = f"{usr}_{nombre_ab}"
 
-    # ----- COLABORADOR -----
     elif rol in ["personal administrativo", "secretaria/o", "practicante"]:
         c_df = load_df("colaboradores")
         if c_df is not None and not c_df.empty:
@@ -920,18 +676,16 @@ try:
                     display_user = f"{usr}_{nombre_col}"
 
 except Exception:
-    pass  # fallback silencioso, nunca rompe el sidebar
+    pass
 
 st.sidebar.write(f"👤 Usuario: {display_user} ({rol_raw})")
 
-# -------- CERRAR SESIÓN --------
 if st.sidebar.button("Cerrar sesión"):
     st.session_state.usuario = None
     st.session_state.rol = None
     st.session_state.abogado_id = ""
     st.rerun()
 
-# -------- PANEL DE CONTROL (SOLO ADMIN, SE MANTIENE IGUAL) --------
 with st.sidebar.expander("🔒 Panel de control", expanded=False):
     pwd = st.text_input("Clave del panel", type="password")
     if pwd == CONTROL_PASSWORD:
@@ -948,7 +702,6 @@ with st.sidebar.expander("🔒 Panel de control", expanded=False):
             st.rerun()
     else:
         st.info("Panel protegido. (Pide la clave)")
-
 # ==========================================================
 # MENÚ MARCA 004 (FILTRADO POR ROL – SIN REDUCIR)
 # ==========================================================
