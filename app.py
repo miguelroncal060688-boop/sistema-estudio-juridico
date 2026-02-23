@@ -4288,12 +4288,18 @@ if menu == "Usuarios":
             except Exception:
                 return s
 
-        df_show = usuarios.drop(columns=["PasswordHash"], errors="ignore").copy()
-        if "AbogadoID" in df_show.columns:
-            df_show           df_show["AbogadoAsociado"] = df_show["AbogadoID"].apply(
-                lambda x: abogado_label.get(str(x), "") if str(x).strip() else ""
-            )
-        st.dataframe(df_show, use_container_width=True)
+# -------------------------------
+# Mostrar relación usuario → abogado (LIMPIO)
+# -------------------------------
+df_show = usuarios.drop(columns=["PasswordHash"], errors="ignore").copy()
+
+if "AbogadoID" in df_show.columns:
+    df_show["AbogadoID"] = df_show["AbogadoID"].apply(_norm_abogado_id)
+    df_show["AbogadoAsociado"] = df_show["AbogadoID"].apply(
+        lambda x: abogado_label.get(str(x), "") if str(x).strip() else ""
+    )
+
+st.dataframe(df_show, use_container_width=True)
 # ==========================================================
 # REPORTES (FILTRADOS POR ROL)
 # ==========================================================
