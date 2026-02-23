@@ -3711,11 +3711,17 @@ if menu == "Generar Contrato":
                 st.info(out_docx)
 
 # ==========================================================
-# USUARIOS + ROLES + PERMISOS (CON CONTRASEÑA + VINCULO ABOGADO + NOMBRE/DNI)
+# USUARIOS + ROLES + PERMISOS (FASE 1 UI)
+# - CRUD usuarios (con vínculo abogado)
+# - Permisos por ROL y por USUARIO (Scope/ScopeID)
+# - Admin protegido
 # ==========================================================
 if menu == "Usuarios":
     st.subheader("👥 Usuarios del Sistema")
 
+    # --------------------------------------------------
+    # ROLES base (puedes ampliar luego)
+    # --------------------------------------------------
     ROLES_DISPONIBLES = [
         "Admin",
         "Abogado",
@@ -3724,351 +3730,569 @@ if menu == "Usuarios":
         "Solo Lectura"
     ]
 
-    DEFAULT_PERMISOS = {
-        "Admin": {"ver": True, "agregar": True, "modificar": True, "borrar": True},
-        "Abogado": {"ver": True, "agregar": True, "modificar": True, "borrar": True},
-        "Personal Administrativo": {"ver": True, "agregar": True, "modificar": True, "borrar": False},
-        "Secretaria/o": {"ver": True, "agregar": True, "modificar": False, "borrar": False},
-        "Solo Lectura": {"ver": True, "agregar": False, "modificar": False, "borrar": False},
-    }
-
     def _norm_role(x: str) -> str:
         return str(x or "").strip().lower()
 
     def _is_admin() -> bool:
         return _norm_role(st.session_state.get("rol", "")) in ["admin", "administrador"]
 
-    # Asegurar columnas extra en usuarios
-    try:
-        if "usuarios" in SCHEMAS:
-            for extra in ["NombreCompleto", "DNI"]:
-                if extra not in SCHEMAS["usuarios"]:
-                    SCHEMAS["usuarios"].append(extra)
-    except Exception:
-        pass
+    # --------------------------------------------------
+    # Cargar data
+    # --------------------------------------------------
+    usuarios = load_df("usuarios")
+    if usuarios is None:
+        usuarios = pd.DataFrame(columns=SCHEMAS.get("usuarios", []))
 
     # =========================
-    # PERMISOS
+    # PERMISOS (FASE 1)
     # =========================
+    # Nuevo esquema esperado:
+    # SCHEMAS["permisos"] incluye Scope, ScopeID, Ver, Agregar, Modificar, Borrar, ... módulos + dashboard sections
     permisos = load_df("permisos")
-    if permisos is None or permisos.empty:
-        rows = []
-        for rol, perms in DEFAULT_PERMISOS.items():
-            rows.append({
-                "Rol": rol,
-                "Ver": int(perms["ver"]),
-                "Agregar": int(perms["agregar"]),
-                "Modificar": int(perms["modificar"]),
-                "Borrar": int(perms["borrar"]),
-            })
-        permisos = pd.DataFrame(rows)
+    if permisos is None:
+        permisos = pd.DataFrame(columns=SCHEMAS.get("permisos", []))
+
+    # --------------------------------------------------
+    # MIGRACIÓN automática si permisos.csv aún está en formato viejo:
+    # columnas antiguas: Rol, Ver, Agregar, Modificar, Borrar
+    # --------------------------------------------------
+    def _perm_cols():
+        return SCHEMAS.get("permisos", [])
+
+    def _perm_has_new_schema(df: pd.DataFrame) -> bool:
+        return (df is not None) and (not df.empty) and ("Scope" in df.columns) and ("ScopeID" in df.columns)
+
+    def _ensure_perm_columns(df: pd.DataFrame) -> pd.DataFrame:
+        for c in _perm_cols():
+            if c not in df.columns:
+                df[c] = "0" if c not in ["Scope", "ScopeID"] else ""
+        return df
+
+    def _migrate_old_perms_if_needed():
+        nonlocal permisos
+        if permisos is None:
+            permisos = pd.DataFrame(columns=_perm_cols())
+
+        # Si ya está en nuevo esquema, solo asegurar columnas
+        if "Scope" in permisos.columns and "ScopeID" in permisos.columns:
+            permisos = _ensure_perm_columns(permisos)
+            save_df("permisos", permisos)
+            return
+
+        # Si está viejo (Rol,Ver,Agregar,Modificar,Borrar)
+        if "Rol" in permisos.columns:
+            df_old = permisos.copy()
+            rows_new = []
+
+            # defaults por módulo/dashboard (puedes ajustar desde UI)
+            def default_role_pack(rol: str):
+                r = _norm_role(rol)
+                base = {c: "0" for c in _perm_cols() if c not in ["Scope", "ScopeID"]}
+
+                # Acciones base según tu DEFAULT_PERMISOS anterior
+                # Admin/Abogado: todo, Administrativo: sin borrar, Secretaria: ver+agregar, Solo lectura: ver
+                if r in ["admin", "administrador"]:
+                    base.update({k: "1" for k in base.keys()})
+                elif r == "abogado":
+                    # CRUD base
+                    base["Ver"] = "1"; base["Agregar"] = "1"; base["Modificar"] = "1"; base["Borrar"] = "1"
+                    # módulos típicos para abogado
+                    for m in ["Casos","Actuaciones","Documentos","Consultas","Instancias","Reportes","Dashboard","Dash_Indicadores","Dash_Agenda","Dash_Reportes","Dash_Pendientes"]:
+                        if m in base: base[m] = "1"
+                    # finanzas por defecto OFF para abogado (puedes encenderlo)
+                    if "Dash_Finanzas" in base: base["Dash_Finanzas"] = "0"
+                    for m in ["Honorarios","Pagos","CuotaLitis"]:
+                        if m in base: base[m] = "0"
+                elif r in ["personal administrativo", "administrativo"]:
+                    base["Ver"] = "1"; base["Agregar"] = "1"; base["Modificar"] = "1"; base["Borrar"] = "0"
+                    for m in ["Casos","Honorarios","Pagos","CuotaLitis","Consultas","Actuaciones","Documentos","Reportes","Dashboard","Dash_Indicadores","Dash_Finanzas","Dash_Pendientes","Dash_Agenda","Dash_Reportes"]:
+                        if m in base: base[m] = "1"
+                    if "Usuarios" in base: base["Usuarios"] = "0"
+                    if "Colaboradores" in base: base["Colaboradores"] = "0"
+                elif r in ["secretaria", "secretaria/o", "asistente"]:
+                    base["Ver"] = "1"; base["Agregar"] = "1"; base["Modificar"] = "0"; base["Borrar"] = "0"
+                    for m in ["Casos","Actuaciones","Documentos","Consultas","Dashboard","Dash_Indicadores","Dash_Agenda"]:
+                        if m in base: base[m] = "1"
+                else:  # solo lectura
+                    base["Ver"] = "1"; base["Agregar"] = "0"; base["Modificar"] = "0"; base["Borrar"] = "0"
+                    for m in ["Casos","Documentos","Dashboard","Dash_Indicadores","Dash_Agenda"]:
+                        if m in base: base[m] = "1"
+
+                return base
+
+            # migrar roles existentes en df_old
+            for _, r in df_old.iterrows():
+                rol = str(r.get("Rol","")).strip()
+                if not rol:
+                    continue
+                pack = default_role_pack(rol)
+
+                # respetar CRUD base anterior si existe
+                for old_col in ["Ver","Agregar","Modificar","Borrar"]:
+                    if old_col in df_old.columns:
+                        try:
+                            pack[old_col] = "1" if int(r.get(old_col, 0)) == 1 else "0"
+                        except Exception:
+                            pass
+
+                rows_new.append({
+                    "Scope": "ROLE",
+                    "ScopeID": rol,
+                    **pack
+                })
+
+            permisos = pd.DataFrame(rows_new) if rows_new else pd.DataFrame(columns=_perm_cols())
+            permisos = _ensure_perm_columns(permisos)
+            save_df("permisos", permisos)
+            return
+
+        # si está vacío sin columnas útiles
+        permisos = pd.DataFrame(columns=_perm_cols())
+        permisos = _ensure_perm_columns(permisos)
         save_df("permisos", permisos)
 
-    def has_perm(accion: str) -> bool:
-        rol_norm = _norm_role(st.session_state.get("rol", ""))
-        if not rol_norm:
-            return False
-        tmp = permisos.copy()
-        tmp["Rol_norm"] = tmp["Rol"].astype(str).str.strip().str.lower()
-        fila = tmp[tmp["Rol_norm"] == rol_norm]
-        if fila.empty:
-            return False
-        col = {"ver": "Ver", "agregar": "Agregar", "modificar": "Modificar", "borrar": "Borrar"}.get(accion)
-        if not col:
-            return False
-        return bool(int(fila.iloc[0].get(col, 0)))
+    _migrate_old_perms_if_needed()
 
-    globals()["has_perm"] = has_perm
+    # --------------------------------------------------
+    # Helpers permisos (prioridad USER > ROLE)
+    # --------------------------------------------------
+    def _perm_get(scope: str, scope_id: str) -> pd.Series | None:
+        dfp = permisos.copy()
+        if dfp is None or dfp.empty:
+            return None
+        if "Scope" not in dfp.columns or "ScopeID" not in dfp.columns:
+            return None
+        row = dfp[(dfp["Scope"].astype(str) == scope) & (dfp["ScopeID"].astype(str) == scope_id)]
+        return None if row.empty else row.iloc[0]
 
-    if _is_admin():
-        with st.expander("⚙️ Configuración de permisos por rol", expanded=False):
-            st.caption("Define qué puede hacer cada rol en el sistema.")
-            edit = permisos.copy()
-            for i in edit.index:
-                st.markdown(f"**{edit.at[i,'Rol']}**")
-                c1, c2, c3, c4 = st.columns(4)
-                edit.at[i,"Ver"] = int(c1.checkbox("Ver", value=bool(int(edit.at[i,"Ver"])), key=f"p_ver_{i}"))
-                edit.at[i,"Agregar"] = int(c2.checkbox("Agregar", value=bool(int(edit.at[i,"Agregar"])), key=f"p_add_{i}"))
-                edit.at[i,"Modificar"] = int(c3.checkbox("Modificar", value=bool(int(edit.at[i,"Modificar"])), key=f"p_mod_{i}"))
-                edit.at[i,"Borrar"] = int(c4.checkbox("Borrar", value=bool(int(edit.at[i,"Borrar"])), key=f"p_del_{i}"))
-                st.divider()
-            if st.button("💾 Guardar permisos", key="p_save"):
-                permisos = edit.copy()
-                save_df("permisos", permisos)
-                st.success("✅ Permisos actualizados")
-                st.rerun()
-    else:
-        st.info("Solo Admin puede editar la matriz de permisos. Puedes ver usuarios, pero no cambiar permisos.")
+    def _perm_bool(v) -> bool:
+        try:
+            return str(v).strip() == "1" or int(v) == 1
+        except Exception:
+            return str(v).strip().lower() in ["true","yes","si","sí"]
 
-    # =========================
-    # ABOGADOS DISPONIBLES (garantiza ID + evita default ID 1)
-    # =========================
-    df_ab = load_df("abogados")
-    if df_ab is None:
-        df_ab = pd.DataFrame()
+    def can_action(action_col: str) -> bool:
+        # action_col: Ver/Agregar/Modificar/Borrar o módulos/dashboard
+        usuario_actual = str(st.session_state.get("usuario","")).strip()
+        rol_actual = str(st.session_state.get("rol","")).strip()
 
-    # normalizar Nombre si viene con otro nombre
-    if not df_ab.empty and "Nombre" not in df_ab.columns:
-        for alt in ["NOMBRE", "Nombre completo", "NombreCompleto"]:
-            if alt in df_ab.columns:
-                df_ab["Nombre"] = df_ab[alt]
-                break
-    if "Nombre" not in df_ab.columns:
-        df_ab["Nombre"] = ""
+        # 1) user override
+        r_user = _perm_get("USER", usuario_actual)
+        if r_user is not None and action_col in r_user.index:
+            return _perm_bool(r_user.get(action_col, "0"))
 
-    # asegurar ID y autogenerarlo si falta/vacío
-    if not df_ab.empty:
-        if "ID" not in df_ab.columns:
-            df_ab["ID"] = ""
+        # 2) role
+        r_role = _perm_get("ROLE", rol_actual)
+        if r_role is not None and action_col in r_role.index:
+            return _perm_bool(r_role.get(action_col, "0"))
 
-        ids_num = pd.to_numeric(df_ab["ID"], errors="coerce")
-        max_id = int(ids_num.dropna().max()) if ids_num.notna().any() else 0
+        # fallback conservador
+        return False
 
-        bad = ids_num.isna() | (ids_num <= 0)
-        for i in df_ab.index[bad].tolist():
-            max_id += 1
-            df_ab.at[i, "ID"] = max_id
+    globals()["has_perm"] = lambda acc: can_action({"ver":"Ver","agregar":"Agregar","modificar":"Modificar","borrar":"Borrar"}.get(acc, "Ver"))
 
-        df_ab["ID"] = pd.to_numeric(df_ab["ID"], errors="coerce").fillna(0).astype(int)
-        df_ab["Nombre"] = df_ab["Nombre"].astype(str).str.strip()
+    # --------------------------------------------------
+    # UI principal: Tabs Usuarios / Permisos
+    # --------------------------------------------------
+    tab_usr, tab_perm = st.tabs(["👤 Gestión de usuarios", "🔐 Permisos (Rol / Usuario)"])
 
-        # guardar IDs estables
-        save_df("abogados", df_ab)
+    # ==========================================================
+    # TAB: PERMISOS (ADMIN)
+    # ==========================================================
+    with tab_perm:
+        st.markdown("### 🔐 Panel de permisos (FASE 1)")
+        if not _is_admin():
+            st.info("Solo Admin puede editar permisos. (Los demás pueden ver sus accesos pero no cambiar).")
 
-    abogado_opts = []
-    abogado_label = {}
-    if not df_ab.empty and "ID" in df_ab.columns:
-        tmp = df_ab.copy()
-        tmp["ID"] = pd.to_numeric(tmp["ID"], errors="coerce").fillna(0).astype(int)
-        tmp["Nombre"] = tmp["Nombre"].astype(str).str.strip()
-        tmp = tmp[(tmp["ID"] > 0) & (tmp["Nombre"] != "")]
-        abogado_opts = tmp["ID"].astype(str).tolist()
-        abogado_label = {str(r["ID"]): str(r["Nombre"]) for _, r in tmp.iterrows()}
+        # lista de columnas de permiso (excluye identity)
+        perm_cols = [c for c in SCHEMAS["permisos"] if c not in ["Scope","ScopeID"]]
 
-    def _fmt_abogado(x):
-        x = str(x)
-        if x == "":
-            return "— Seleccione abogado —"
-        return f"{abogado_label.get(x,'')} (ID {x})"
+        tab_r, tab_u = st.tabs(["Por Rol", "Por Usuario"])
 
-    # =========================
-    # GESTIÓN DE USUARIOS
-    # =========================
-    st.markdown("## 👤 Gestión de usuarios")
-    accion_u = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True, key="usr_acc")
+        # ---- POR ROL ----
+        with tab_r:
+            rol_sel = st.selectbox("Rol", ROLES_DISPONIBLES, key="perm_role_sel")
+            base_row = _perm_get("ROLE", rol_sel)
+            base = {c: "0" for c in perm_cols}
+            if base_row is not None:
+                for c in perm_cols:
+                    base[c] = str(base_row.get(c, "0"))
 
-    # ---------- NUEVO ----------
-    if accion_u == "Nuevo":
-        with st.form("usr_new"):
-            rol = st.selectbox("Rol", ROLES_DISPONIBLES, key="usr_new_role")
+            # agrupar visualmente
+            grp_acc = ["Ver","Agregar","Modificar","Borrar"]
+            grp_mod = ["Casos","Honorarios","Pagos","CuotaLitis","Consultas","Actuaciones","Documentos","Usuarios","Colaboradores","Instancias","Contratos","Reportes"]
+            grp_dash = ["Dashboard","Dash_Indicadores","Dash_Finanzas","Dash_Pendientes","Dash_Agenda","Dash_Reportes"]
 
-            usuario = st.text_input("Usuario", key="usr_new_user")
-            pwd = st.text_input("Contraseña", type="password", key="usr_new_pwd")
-            pwd2 = st.text_input("Repetir contraseña", type="password", key="usr_new_pwd2")
+            with st.form(f"perm_role_form_{rol_sel}"):
+                st.caption(f"Configuras permisos para el rol: **{rol_sel}**")
 
-            abogado_id = ""
-            nombre_completo = ""
-            dni_personal = ""
+                st.markdown("#### Acciones (CRUD)")
+                c1,c2,c3,c4 = st.columns(4)
+                val = {}
+                for i, col in enumerate(grp_acc):
+                    with [c1,c2,c3,c4][i]:
+                        val[col] = "1" if st.checkbox(col, value=_perm_bool(base.get(col,"0")), key=f"pr_{rol_sel}_{col}") else "0"
 
-            if rol == "Abogado":
-                st.markdown("### 👨‍⚖️ Abogado asociado (obligatorio)")
-                if not abogado_opts:
-                    st.error("❌ No hay abogados registrados para asociar. Registra abogados primero.")
-                abogado_id = st.selectbox(
-                    "Selecciona abogado",
-                    options=[""] + abogado_opts,
-                    format_func=_fmt_abogado,
-                    key="usr_new_abogado"
-                )
+                st.markdown("#### Módulos")
+                cols = st.columns(3)
+                for i, col in enumerate(grp_mod):
+                    with cols[i % 3]:
+                        val[col] = "1" if st.checkbox(col, value=_perm_bool(base.get(col,"0")), key=f"pr_{rol_sel}_{col}") else "0"
+
+                st.markdown("#### Dashboard (secciones)")
+                cols2 = st.columns(3)
+                for i, col in enumerate(grp_dash):
+                    with cols2[i % 3]:
+                        val[col] = "1" if st.checkbox(col.replace("_"," "), value=_perm_bool(base.get(col,"0")), key=f"pr_{rol_sel}_{col}") else "0"
+
+                save_btn = st.form_submit_button("💾 Guardar permisos del rol", disabled=not _is_admin())
+                if save_btn:
+                    # upsert
+                    dfp = permisos.copy()
+                    dfp = dfp[~((dfp["Scope"]=="ROLE") & (dfp["ScopeID"]==rol_sel))]
+                    new_row = {"Scope":"ROLE","ScopeID":rol_sel}
+                    for c in perm_cols:
+                        new_row[c] = val.get(c, base.get(c,"0"))
+                    dfp = pd.concat([dfp, pd.DataFrame([new_row])], ignore_index=True)
+                    permisos = dfp
+                    save_df("permisos", permisos)
+                    st.success("✅ Permisos del rol guardados")
+                    st.rerun()
+
+        # ---- POR USUARIO ----
+        with tab_u:
+            users_list = usuarios["Usuario"].astype(str).tolist() if (usuarios is not None and not usuarios.empty and "Usuario" in usuarios.columns) else []
+            if not users_list:
+                st.info("No hay usuarios registrados.")
             else:
-                st.markdown("### 👤 Datos personales")
-                nombre_completo = st.text_input("Nombre completo", key="usr_new_nombre")
-                dni_personal = st.text_input("DNI", key="usr_new_dni")
+                user_sel = st.selectbox("Usuario", users_list, key="perm_user_sel")
+                base_row = _perm_get("USER", user_sel)
+                base = {c: "0" for c in perm_cols}
+                if base_row is not None:
+                    for c in perm_cols:
+                        base[c] = str(base_row.get(c, "0"))
 
-            disabled_submit = (rol == "Abogado" and not abogado_opts)
-            submit = st.form_submit_button("Crear usuario", disabled=disabled_submit)
+                # mostrar rol heredado
+                rol_h = ""
+                try:
+                    rol_h = str(usuarios[usuarios["Usuario"].astype(str)==str(user_sel)].iloc[0].get("Rol",""))
+                except Exception:
+                    pass
+                st.caption(f"Rol actual del usuario: **{rol_h}** (los permisos de USER sobrescriben al rol)")
 
-            if submit:
-                if not str(usuario).strip():
-                    st.error("Usuario es obligatorio.")
-                    st.stop()
-                if (usuarios["Usuario"].astype(str) == str(usuario).strip()).any():
-                    st.error("Ese usuario ya existe.")
-                    st.stop()
-                if not pwd:
-                    st.error("Contraseña es obligatoria.")
-                    st.stop()
-                if pwd != pwd2:
-                    st.error("Las contraseñas no coinciden.")
-                    st.stop()
-                if rol == "Abogado" and not str(abogado_id).strip():
-                    st.error("Debes seleccionar un abogado asociado (obligatorio).")
-                    st.stop()
+                grp_acc = ["Ver","Agregar","Modificar","Borrar"]
+                grp_mod = ["Casos","Honorarios","Pagos","CuotaLitis","Consultas","Actuaciones","Documentos","Usuarios","Colaboradores","Instancias","Contratos","Reportes"]
+                grp_dash = ["Dashboard","Dash_Indicadores","Dash_Finanzas","Dash_Pendientes","Dash_Agenda","Dash_Reportes"]
 
-                usuarios = add_row(usuarios, {
-                    "Usuario": str(usuario).strip(),
-                    "PasswordHash": sha256(pwd),
-                    "Rol": rol,
-                    "AbogadoID": str(abogado_id).strip() if rol == "Abogado" else "",
-                    "Activo": "1",
-                    "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "NombreCompleto": str(nombre_completo).strip() if rol != "Abogado" else "",
-                    "DNI": str(dni_personal).strip() if rol != "Abogado" else "",
-                }, "usuarios")
-                save_df("usuarios", usuarios)
+                with st.form(f"perm_user_form_{user_sel}"):
+                    st.markdown("#### Acciones (CRUD)")
+                    c1,c2,c3,c4 = st.columns(4)
+                    val = {}
+                    for i, col in enumerate(grp_acc):
+                        with [c1,c2,c3,c4][i]:
+                            val[col] = "1" if st.checkbox(col, value=_perm_bool(base.get(col,"0")), key=f"pu_{user_sel}_{col}") else "0"
+
+                    st.markdown("#### Módulos")
+                    cols = st.columns(3)
+                    for i, col in enumerate(grp_mod):
+                        with cols[i % 3]:
+                            val[col] = "1" if st.checkbox(col, value=_perm_bool(base.get(col,"0")), key=f"pu_{user_sel}_{col}") else "0"
+
+                    st.markdown("#### Dashboard (secciones)")
+                    cols2 = st.columns(3)
+                    for i, col in enumerate(grp_dash):
+                        with cols2[i % 3]:
+                            val[col] = "1" if st.checkbox(col.replace("_"," "), value=_perm_bool(base.get(col,"0")), key=f"pu_{user_sel}_{col}") else "0"
+
+                    save_btn = st.form_submit_button("💾 Guardar permisos del usuario", disabled=not _is_admin())
+                    if save_btn:
+                        dfp = permisos.copy()
+                        dfp = dfp[~((dfp["Scope"]=="USER") & (dfp["ScopeID"]==user_sel))]
+                        new_row = {"Scope":"USER","ScopeID":user_sel}
+                        for c in perm_cols:
+                            new_row[c] = val.get(c, base.get(c,"0"))
+                        dfp = pd.concat([dfp, pd.DataFrame([new_row])], ignore_index=True)
+                        permisos = dfp
+                        save_df("permisos", permisos)
+                        st.success("✅ Permisos del usuario guardados")
+                        st.rerun()
+
+                # opción para borrar override del usuario
+                st.divider()
+                st.warning("⚠️ Quitar permisos específicos del usuario (volver a heredar del rol)")
+                conf = st.text_input("Escribe ELIMINAR para confirmar", key=f"perm_user_del_{user_sel}")
+                if st.button("🧹 Quitar override de este usuario", disabled=(not _is_admin()) or conf.strip().upper()!="ELIMINAR", key=f"perm_user_del_btn_{user_sel}"):
+                    dfp = permisos.copy()
+                    dfp = dfp[~((dfp["Scope"]=="USER") & (dfp["ScopeID"]==user_sel))]
+                    permisos = dfp
+                    save_df("permisos", permisos)
+                    st.success("✅ Override eliminado")
+                    st.rerun()
+
+    # ==========================================================
+    # TAB: GESTIÓN DE USUARIOS (TU CRUD, CONSERVADO)
+    # ==========================================================
+    with tab_usr:
+        # =========================
+        # ABOGADOS DISPONIBLES (garantiza ID + evita default ID 1)
+        # =========================
+        df_ab = load_df("abogados")
+        if df_ab is None:
+            df_ab = pd.DataFrame()
+
+        if not df_ab.empty and "Nombre" not in df_ab.columns:
+            for alt in ["NOMBRE", "Nombre completo", "NombreCompleto"]:
+                if alt in df_ab.columns:
+                    df_ab["Nombre"] = df_ab[alt]
+                    break
+        if "Nombre" not in df_ab.columns:
+            df_ab["Nombre"] = ""
+
+        # asegurar ID si falta/vacío
+        if not df_ab.empty:
+            if "ID" not in df_ab.columns:
+                df_ab["ID"] = ""
+
+            ids_num = pd.to_numeric(df_ab["ID"], errors="coerce")
+            max_id = int(ids_num.dropna().max()) if ids_num.notna().any() else 0
+
+            bad = ids_num.isna() | (ids_num <= 0)
+            for i in df_ab.index[bad].tolist():
+                max_id += 1
+                df_ab.at[i, "ID"] = max_id
+
+            df_ab["ID"] = pd.to_numeric(df_ab["ID"], errors="coerce").fillna(0).astype(int)
+            df_ab["Nombre"] = df_ab["Nombre"].astype(str).str.strip()
+            save_df("abogados", df_ab)
+
+        abogado_opts = []
+        abogado_label = {}
+        if not df_ab.empty and "ID" in df_ab.columns:
+            tmp = df_ab.copy()
+            tmp["ID"] = pd.to_numeric(tmp["ID"], errors="coerce").fillna(0).astype(int)
+            tmp["Nombre"] = tmp["Nombre"].astype(str).str.strip()
+            tmp = tmp[(tmp["ID"] > 0) & (tmp["Nombre"] != "")]
+            abogado_opts = tmp["ID"].astype(str).tolist()
+            abogado_label = {str(r["ID"]): str(r["Nombre"]) for _, r in tmp.iterrows()}
+
+        def _fmt_abogado(x):
+            x = str(x)
+            if x == "":
+                return "— Seleccione abogado —"
+            return f"{abogado_label.get(x,'')} (ID {x})"
+
+        st.markdown("## 👤 Gestión de usuarios")
+        accion_u = st.radio("Acción", ["Nuevo","Editar","Eliminar"], horizontal=True, key="usr_acc")
+
+        # ---------- NUEVO ----------
+        if accion_u == "Nuevo":
+            with st.form("usr_new"):
+                rol = st.selectbox("Rol", ROLES_DISPONIBLES, key="usr_new_role")
+
+                usuario = st.text_input("Usuario", key="usr_new_user")
+                pwd = st.text_input("Contraseña", type="password", key="usr_new_pwd")
+                pwd2 = st.text_input("Repetir contraseña", type="password", key="usr_new_pwd2")
+
+                abogado_id = ""
+                nombre_completo = ""
+                dni_personal = ""
 
                 if rol == "Abogado":
-                    st.success(f"✅ Usuario creado y asociado a: {abogado_label.get(str(abogado_id),'')} (ID {abogado_id})")
-                else:
-                    st.success("✅ Usuario creado")
-
-                st.rerun()
-
-    # ---------- EDITAR ----------
-    elif accion_u == "Editar":
-        if usuarios.empty:
-            st.info("No hay usuarios.")
-        else:
-            sel_user = st.selectbox(
-                "Selecciona usuario",
-                usuarios["Usuario"].astype(str).tolist(),
-                key="usr_edit_sel"
-            )
-            fila = usuarios[usuarios["Usuario"].astype(str) == str(sel_user)].iloc[0]
-
-            with st.form("usr_edit"):
-                rol_new = st.selectbox(
-                    "Rol",
-                    ROLES_DISPONIBLES,
-                    index=ROLES_DISPONIBLES.index(str(fila.get("Rol","Solo Lectura"))) if str(fila.get("Rol","Solo Lectura")) in ROLES_DISPONIBLES else 0,
-                    key="usr_edit_role"
-                )
-
-                usuario_new = st.text_input("Usuario", value=str(fila.get("Usuario","")), key="usr_edit_user")
-                activo_new = st.selectbox(
-                    "Activo",
-                    ["1","0"],
-                    index=0 if str(fila.get("Activo","1")) == "1" else 1,
-                    key="usr_edit_activo"
-                )
-
-                st.markdown("### 🔑 Cambiar contraseña (opcional)")
-                new_pwd = st.text_input("Nueva contraseña", type="password", key="usr_edit_pwd")
-                new_pwd2 = st.text_input("Repetir nueva contraseña", type="password", key="usr_edit_pwd2")
-
-                abogado_id_new = str(fila.get("AbogadoID","")).strip()
-                nombre_new = str(fila.get("NombreCompleto","")).strip()
-                dni_new = str(fila.get("DNI","")).strip()
-
-                if rol_new == "Abogado":
                     st.markdown("### 👨‍⚖️ Abogado asociado (obligatorio)")
-                    if abogado_id_new:
-                        st.caption(f"Actualmente asociado a: {abogado_label.get(abogado_id_new,'')} (ID {abogado_id_new})")
                     if not abogado_opts:
                         st.error("❌ No hay abogados registrados para asociar. Registra abogados primero.")
-                    abogado_id_new = st.selectbox(
+                    abogado_id = st.selectbox(
                         "Selecciona abogado",
                         options=[""] + abogado_opts,
-                        index=([""] + abogado_opts).index(abogado_id_new) if abogado_id_new in ([""] + abogado_opts) else 0,
                         format_func=_fmt_abogado,
-                        key="usr_edit_abogado"
+                        key="usr_new_abogado"
                     )
-                    nombre_new = ""
-                    dni_new = ""
                 else:
-                    nombre_new = st.text_input("Nombre completo", value=nombre_new, key="usr_edit_nombre")
-                    dni_new = st.text_input("DNI", value=dni_new, key="usr_edit_dni")
-                    abogado_id_new = ""
+                    st.markdown("### 👤 Datos personales")
+                    nombre_completo = st.text_input("Nombre completo", key="usr_new_nombre")
+                    dni_personal = st.text_input("DNI", key="usr_new_dni")
 
-                disabled_submit = (rol_new == "Abogado" and not abogado_opts)
-                submit = st.form_submit_button("Actualizar usuario", disabled=disabled_submit)
+                disabled_submit = (rol == "Abogado" and not abogado_opts)
+                submit = st.form_submit_button("Crear usuario", disabled=disabled_submit)
 
                 if submit:
-                    if not str(usuario_new).strip():
+                    if not str(usuario).strip():
                         st.error("Usuario es obligatorio.")
                         st.stop()
-                    if (str(usuario_new).strip() != str(sel_user).strip()) and (usuarios["Usuario"].astype(str) == str(usuario_new).strip()).any():
+                    if (usuarios["Usuario"].astype(str) == str(usuario).strip()).any():
                         st.error("Ese usuario ya existe.")
                         st.stop()
-                    if new_pwd and new_pwd != new_pwd2:
+                    if not pwd:
+                        st.error("Contraseña es obligatoria.")
+                        st.stop()
+                    if pwd != pwd2:
                         st.error("Las contraseñas no coinciden.")
                         st.stop()
-                    if rol_new == "Abogado" and not str(abogado_id_new).strip():
+                    if rol == "Abogado" and not str(abogado_id).strip():
                         st.error("Debes seleccionar un abogado asociado (obligatorio).")
                         st.stop()
 
-                    idx = usuarios.index[usuarios["Usuario"].astype(str) == str(sel_user)][0]
-                    usuarios.at[idx, "Usuario"] = str(usuario_new).strip()
-                    usuarios.at[idx, "Rol"] = rol_new
-                    usuarios.at[idx, "Activo"] = str(activo_new)
-                    usuarios.at[idx, "AbogadoID"] = str(abogado_id_new).strip()
-                    usuarios.at[idx, "NombreCompleto"] = str(nombre_new).strip()
-                    usuarios.at[idx, "DNI"] = str(dni_new).strip()
-
-                    if new_pwd:
-                        usuarios.at[idx, "PasswordHash"] = sha256(new_pwd)
-
+                    usuarios = add_row(usuarios, {
+                        "Usuario": str(usuario).strip(),
+                        "PasswordHash": sha256(pwd),
+                        "Rol": rol,
+                        "AbogadoID": str(abogado_id).strip() if rol == "Abogado" else "",
+                        "Activo": "1",
+                        "Creado": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "NombreCompleto": str(nombre_completo).strip() if rol != "Abogado" else "",
+                        "DNI": str(dni_personal).strip() if rol != "Abogado" else "",
+                    }, "usuarios")
                     save_df("usuarios", usuarios)
-                    st.success("✅ Usuario actualizado")
+
+                    if rol == "Abogado":
+                        st.success(f"✅ Usuario creado y asociado a: {abogado_label.get(str(abogado_id),'')} (ID {abogado_id})")
+                    else:
+                        st.success("✅ Usuario creado")
+
                     st.rerun()
 
-    # ---------- ELIMINAR ----------
-    elif accion_u == "Eliminar":
-        if usuarios.empty:
-            st.info("No hay usuarios.")
-        else:
-            sel_user = st.selectbox(
-                "Selecciona usuario a eliminar",
-                usuarios["Usuario"].astype(str).tolist(),
-                key="usr_del_sel"
+        # ---------- EDITAR ----------
+        elif accion_u == "Editar":
+            if usuarios.empty:
+                st.info("No hay usuarios.")
+            else:
+                sel_user = st.selectbox(
+                    "Selecciona usuario",
+                    usuarios["Usuario"].astype(str).tolist(),
+                    key="usr_edit_sel"
+                )
+                fila = usuarios[usuarios["Usuario"].astype(str) == str(sel_user)].iloc[0]
+
+                with st.form("usr_edit"):
+                    rol_new = st.selectbox(
+                        "Rol",
+                        ROLES_DISPONIBLES,
+                        index=ROLES_DISPONIBLES.index(str(fila.get("Rol","Solo Lectura"))) if str(fila.get("Rol","Solo Lectura")) in ROLES_DISPONIBLES else 0,
+                        key="usr_edit_role"
+                    )
+
+                    usuario_new = st.text_input("Usuario", value=str(fila.get("Usuario","")), key="usr_edit_user")
+                    activo_new = st.selectbox(
+                        "Activo",
+                        ["1","0"],
+                        index=0 if str(fila.get("Activo","1")) == "1" else 1,
+                        key="usr_edit_activo"
+                    )
+
+                    st.markdown("### 🔑 Cambiar contraseña (opcional)")
+                    new_pwd = st.text_input("Nueva contraseña", type="password", key="usr_edit_pwd")
+                    new_pwd2 = st.text_input("Repetir nueva contraseña", type="password", key="usr_edit_pwd2")
+
+                    abogado_id_new = str(fila.get("AbogadoID","")).strip()
+                    nombre_new = str(fila.get("NombreCompleto","")).strip()
+                    dni_new = str(fila.get("DNI","")).strip()
+
+                    if rol_new == "Abogado":
+                        st.markdown("### 👨‍⚖️ Abogado asociado (obligatorio)")
+                        if abogado_id_new:
+                            st.caption(f"Actualmente asociado a: {abogado_label.get(abogado_id_new,'')} (ID {abogado_id_new})")
+                        if not abogado_opts:
+                            st.error("❌ No hay abogados registrados para asociar. Registra abogados primero.")
+                        abogado_id_new = st.selectbox(
+                            "Selecciona abogado",
+                            options=[""] + abogado_opts,
+                            index=([""] + abogado_opts).index(abogado_id_new) if abogado_id_new in ([""] + abogado_opts) else 0,
+                            format_func=_fmt_abogado,
+                            key="usr_edit_abogado"
+                        )
+                        nombre_new = ""
+                        dni_new = ""
+                    else:
+                        nombre_new = st.text_input("Nombre completo", value=nombre_new, key="usr_edit_nombre")
+                        dni_new = st.text_input("DNI", value=dni_new, key="usr_edit_dni")
+                        abogado_id_new = ""
+
+                    disabled_submit = (rol_new == "Abogado" and not abogado_opts)
+                    submit = st.form_submit_button("Actualizar usuario", disabled=disabled_submit)
+
+                    if submit:
+                        if not str(usuario_new).strip():
+                            st.error("Usuario es obligatorio.")
+                            st.stop()
+                        if (str(usuario_new).strip() != str(sel_user).strip()) and (usuarios["Usuario"].astype(str) == str(usuario_new).strip()).any():
+                            st.error("Ese usuario ya existe.")
+                            st.stop()
+                        if new_pwd and new_pwd != new_pwd2:
+                            st.error("Las contraseñas no coinciden.")
+                            st.stop()
+                        if rol_new == "Abogado" and not str(abogado_id_new).strip():
+                            st.error("Debes seleccionar un abogado asociado (obligatorio).")
+                            st.stop()
+
+                        idx = usuarios.index[usuarios["Usuario"].astype(str) == str(sel_user)][0]
+                        usuarios.at[idx, "Usuario"] = str(usuario_new).strip()
+                        usuarios.at[idx, "Rol"] = rol_new
+                        usuarios.at[idx, "Activo"] = str(activo_new)
+                        usuarios.at[idx, "AbogadoID"] = str(abogado_id_new).strip()
+                        usuarios.at[idx, "NombreCompleto"] = str(nombre_new).strip()
+                        usuarios.at[idx, "DNI"] = str(dni_new).strip()
+
+                        if new_pwd:
+                            usuarios.at[idx, "PasswordHash"] = sha256(new_pwd)
+
+                        save_df("usuarios", usuarios)
+                        st.success("✅ Usuario actualizado")
+                        st.rerun()
+
+        # ---------- ELIMINAR ----------
+        elif accion_u == "Eliminar":
+            if usuarios.empty:
+                st.info("No hay usuarios.")
+            else:
+                sel_user = st.selectbox(
+                    "Selecciona usuario a eliminar",
+                    usuarios["Usuario"].astype(str).tolist(),
+                    key="usr_del_sel"
+                )
+
+                st.warning("⚠️ Esta acción no se puede deshacer")
+                confirm = st.text_input("Escribe ELIMINAR para confirmar", key="usr_del_confirm")
+
+                usuario_actual = str(st.session_state.get("usuario","")).strip()
+                no_borrable = str(sel_user).strip().lower() == "admin"
+                mismo_usuario = str(sel_user).strip() == usuario_actual
+
+                if no_borrable:
+                    st.error("❌ No se puede eliminar el usuario 'admin' (protegido).")
+                if mismo_usuario:
+                    st.error("❌ No puedes eliminar tu propio usuario mientras estás logueado.")
+
+                disabled_delete = (confirm.strip().upper() != "ELIMINAR") or no_borrable or mismo_usuario
+
+                if st.button("🗑️ Eliminar usuario", key="usr_del_btn", disabled=disabled_delete):
+                    usuarios = usuarios[usuarios["Usuario"].astype(str) != str(sel_user)].copy()
+                    save_df("usuarios", usuarios)
+                    st.success("✅ Usuario eliminado")
+                    st.rerun()
+
+        st.divider()
+
+        # Mostrar relación usuario→abogado
+        def _norm_abogado_id(x):
+            s = str(x).strip()
+            if s == "" or s.lower() in ["nan", "none"]:
+                return ""
+            try:
+                if "." in s:
+                    return str(int(float(s)))
+            except Exception:
+                pass
+            try:
+                return str(int(s))
+            except Exception:
+                return s
+
+        df_show = usuarios.drop(columns=["PasswordHash"], errors="ignore").copy()
+        if "AbogadoID" in df_show.columns:
+            df_show           df_show["AbogadoAsociado"] = df_show["AbogadoID"].apply(
+                lambda x: abogado_label.get(str(x), "") if str(x).strip() else ""
             )
-
-            st.warning("⚠️ Esta acción no se puede deshacer")
-            confirm = st.text_input("Escribe ELIMINAR para confirmar", key="usr_del_confirm")
-
-            # ✅ NUEVO: NO borrar admin jamás, ni el usuario logueado
-            usuario_actual = str(st.session_state.get("usuario","")).strip()
-            no_borrable = str(sel_user).strip().lower() == "admin"
-            mismo_usuario = str(sel_user).strip() == usuario_actual
-
-            if no_borrable:
-                st.error("❌ No se puede eliminar el usuario 'admin' (protegido).")
-            if mismo_usuario:
-                st.error("❌ No puedes eliminar tu propio usuario mientras estás logueado.")
-
-            disabled_delete = (confirm.strip().upper() != "ELIMINAR") or no_borrable or mismo_usuario
-
-            if st.button("🗑️ Eliminar usuario", key="usr_del_btn", disabled=disabled_delete):
-                usuarios = usuarios[usuarios["Usuario"].astype(str) != str(sel_user)].copy()
-                save_df("usuarios", usuarios)
-                st.success("✅ Usuario eliminado")
-                st.rerun()
-
-    st.divider()
-
-    # ✅ Mostrar relación usuario→abogado correctamente (soporta 1, 1.0, "1")
-    def _norm_abogado_id(x):
-        s = str(x).strip()
-        if s == "" or s.lower() in ["nan", "none"]:
-            return ""
-        try:
-            if "." in s:
-                return str(int(float(s)))
-        except Exception:
-            pass
-        try:
-            return str(int(s))
-        except Exception:
-            return s
-
-    df_show = usuarios.drop(columns=["PasswordHash"], errors="ignore").copy()
-    if "AbogadoID" in df_show.columns:
-        df_show["AbogadoID"] = df_show["AbogadoID"].apply(_norm_abogado_id)
-        df_show["AbogadoAsociado"] = df_show["AbogadoID"].apply(
-            lambda x: abogado_label.get(str(x), "") if str(x).strip() else ""
-        )
-
-    st.dataframe(df_show, use_container_width=True)
+        st.dataframe(df_show, use_container_width=True)
 # ==========================================================
 # REPORTES (FILTRADOS POR ROL)
 # ==========================================================
