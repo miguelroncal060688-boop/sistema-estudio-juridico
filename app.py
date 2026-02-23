@@ -405,12 +405,14 @@ def ensure_ids(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_row(df: pd.DataFrame, row_dict: dict, schema_key: str) -> pd.DataFrame:
     df2 = pd.concat([df, pd.DataFrame([row_dict])], ignore_index=True)
-    # ✅ asegurar columnas del schema sin recortar (FASE 0)
+
+    # ✅ Asegurar columnas del schema sin recortar otras
     for c in SCHEMAS.get(schema_key, []):
         if c not in df2.columns:
             df2[c] = ""
-    return df2
 
+    return df2
+    
 def brand_header():
     st.markdown(
         f"""
